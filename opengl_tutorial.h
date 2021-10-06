@@ -5,13 +5,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+#include <stdint.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 typedef struct {
   GLFWwindow *window;
   GLuint vertex_buffer_object;
+  GLuint shader_program;
 } ApplicationState;
 
 // Allocates an ApplicationState struct and initializes its values to 0.
@@ -26,11 +27,10 @@ void FreeApplicationState(ApplicationState *s);
 // Otherwise returns 1.
 int CheckGLErrors(void);
 
-// Sets up the GLFW window. Returns 0 on error.
-int SetupWindow(ApplicationState *s);
-
-// Sets up our vertex buffer object. Returns 0 on error.
-int SetupVertexBuffer(ApplicationState *s);
+// Reads the file with the entire given name to a NULL-terminated buffer of
+// bytes. Returns NULL on error. The caller is responsible for freeing the
+// returned buffer when it's no longer needed.
+uint8_t* ReadFullFile(const char *path);
 
 #ifdef __cplusplus
 }  // extern "C"
