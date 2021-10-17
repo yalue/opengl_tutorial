@@ -11,6 +11,7 @@ extern "C" {
 
 typedef struct {
   GLFWwindow *window;
+  GLuint vertex_array_object;
   GLuint vertex_buffer_object;
   GLuint shader_program;
 } ApplicationState;

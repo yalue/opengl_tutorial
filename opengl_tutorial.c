@@ -141,12 +141,16 @@ static int SetupWindow(ApplicationState *s) {
 static int SetupVertexBuffer(ApplicationState *s) {
   float vertices[] = {
     -0.5, -0.5, 0,
-    -0.5, 0.5, 0,
+    0.5, -0.5, 0,
     0, 0.5, 0,
   };
+  glGenVertexArrays(1, &(s->vertex_array_object));
+  glBindVertexArray(s->vertex_array_object);
   glGenBuffers(1, &(s->vertex_buffer_object));
   glBindBuffer(GL_ARRAY_BUFFER, s->vertex_buffer_object);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+  glEnableVertexAttribArray(0);
   return CheckGLErrors();
 }
 
@@ -237,6 +241,10 @@ static int RunMainLoop(ApplicationState *s) {
 
     glClearColor(0.3f, 0.05f, 0.5f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    glUseProgram(s->shader_program);
+    glBindVertexArray(s->vertex_array_object);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     glfwSwapBuffers(s->window);
     glfwPollEvents();
