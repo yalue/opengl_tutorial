@@ -21,6 +21,8 @@ void FreeApplicationState(ApplicationState *s) {
   if (!s) return;
   if (s->window) glfwDestroyWindow(s->window);
   glDeleteProgram(s->shader_program);
+  glDeleteVertexArrays(1, &(s->vertex_array_object));
+  glDeleteBuffers(1, &(s->element_buffer_object));
   glDeleteBuffers(1, &(s->vertex_buffer_object));
   memset(s, 0, sizeof(*s));
   free(s);
@@ -140,13 +142,21 @@ static int SetupWindow(ApplicationState *s) {
 // Allocates the vertex buffer. Returns 0 on error.
 static int SetupVertexBuffer(ApplicationState *s) {
   float vertices[] = {
-    -0.5, -0.5, 0,
+    0.5, 0.5, 0,
     0.5, -0.5, 0,
-    0, 0.5, 0,
+    -0.5, -0.5, 0,
+    -0.5, 0.5, 0,
+  };
+  GLuint indices[] = {
+    0, 1, 2,
+    2, 3, 0,
   };
   glGenVertexArrays(1, &(s->vertex_array_object));
   glBindVertexArray(s->vertex_array_object);
+  glGenBuffers(1, &(s->element_buffer_object));
   glGenBuffers(1, &(s->vertex_buffer_object));
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->element_buffer_object);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, s->vertex_buffer_object);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
@@ -233,6 +243,8 @@ static int ProcessInputs(GLFWwindow *window) {
 
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
+  // Uncomment to render in wireframe mode.
+  // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   while (!glfwWindowShouldClose(s->window)) {
     if (!ProcessInputs(s->window)) {
       printf("Error processing inputs.\n");
@@ -243,8 +255,8 @@ static int RunMainLoop(ApplicationState *s) {
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(s->shader_program);
-    glBindVertexArray(s->vertex_array_object);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->element_buffer_object);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     glfwSwapBuffers(s->window);
     glfwPollEvents();
@@ -286,14 +298,13 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
-  // TODO (next): Continue with the tutorial: linking vertex attributes
-  //
-  // - Look for it on the page https://learnopengl.com/Getting-started/Hello-Triangle
   if (!CheckGLErrors()) {
     printf("OpenGL errors detected during initialization.\n");
     to_return = 1;
     goto cleanup;
   }
+  // TODO (next): Continue with the "Shaders" part of the tutorial:
+  //   https://learnopengl.com/Getting-started/Shaders
   if (!RunMainLoop(s)) {
     printf("Application ended with an error.\n");
     to_return = 1;
