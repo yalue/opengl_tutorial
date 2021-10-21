@@ -15,6 +15,7 @@ typedef struct {
   GLuint vertex_buffer_object;
   GLuint element_buffer_object;
   GLuint shader_program;
+  GLuint texture;
 } ApplicationState;
 
 // Allocates an ApplicationState struct and initializes its values to 0.

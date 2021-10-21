@@ -8,6 +8,14 @@
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#define STBI_NO_PSD
+#define STBI_NO_TGA
+#define STBI_NO_GIF
+#define STBI_NO_HDR
+#define STBI_NO_PIC
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include "opengl_tutorial.h"
 
 ApplicationState* AllocateApplicationState(void) {
@@ -21,6 +29,7 @@ void FreeApplicationState(ApplicationState *s) {
   if (!s) return;
   if (s->window) glfwDestroyWindow(s->window);
   glDeleteProgram(s->shader_program);
+  glDeleteTextures(1, &(s->texture));
   glDeleteVertexArrays(1, &(s->vertex_array_object));
   glDeleteBuffers(1, &(s->element_buffer_object));
   glDeleteBuffers(1, &(s->vertex_buffer_object));
@@ -141,11 +150,15 @@ static int SetupWindow(ApplicationState *s) {
 
 // Allocates the vertex buffer. Returns 0 on error.
 static int SetupVertexBuffer(ApplicationState *s) {
+  // Each row:
+  //  - First three values: position (x, y, z)
+  //  - Second three values: color (r, g, b)
+  //  - Next two values: texture coordinate (u, v)
   float vertices[] = {
-    0.5, 0.5, 0,
-    0.5, -0.5, 0,
-    -0.5, -0.5, 0,
-    -0.5, 0.5, 0,
+    0.5, 0.5, 0, 1.0, 0.0, 0.0, 1.0, 1.0,
+    0.5, -0.5, 0, 0.0, 1.0, 0.0, 1.0, 0.0,
+    -0.5, -0.5, 0, 0.0, 0.0, 1.0, 0.0, 0.0,
+    -0.5, 0.5, 0, 0.5, 0.5, 0.5, 0.0, 1.0,
   };
   GLuint indices[] = {
     0, 1, 2,
@@ -159,8 +172,18 @@ static int SetupVertexBuffer(ApplicationState *s) {
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, s->vertex_buffer_object);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+
+  // Set up the positions and colors to interleave:
+  //  - Each has 3 values, so a stride of 6.
+  //  - Colors are at attribute 1, and start at the fourth float in the array.
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), 0);
   glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+    (void *) (3 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+    (void *) (6 * sizeof(float)));
+  glEnableVertexAttribArray(2);
   return CheckGLErrors();
 }
 
@@ -233,6 +256,30 @@ static int SetupShaderProgram(ApplicationState *s) {
   return CheckGLErrors();
 }
 
+// Loads any image texture(s) needed by the application. Returns 0 on error.
+static int LoadTextures(ApplicationState *s) {
+  int width, height, channels;
+  unsigned char *image_data = stbi_load("container.jpg", &width, &height,
+    &channels, 3);
+  if (!image_data) {
+    printf("Failed loading container.jpg.\n");
+    return 0;
+  }
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+    GL_LINEAR_MIPMAP_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glGenTextures(1, &(s->texture));
+  glBindTexture(GL_TEXTURE_2D, s->texture);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB,
+    GL_UNSIGNED_BYTE, image_data);
+  glGenerateMipmap(GL_TEXTURE_2D);
+  stbi_image_free(image_data);
+  image_data = NULL;
+  return CheckGLErrors();
+}
+
 // Processes window inputs. Returns 0 on error.
 static int ProcessInputs(GLFWwindow *window) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -255,6 +302,7 @@ static int RunMainLoop(ApplicationState *s) {
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(s->shader_program);
+    glBindTexture(GL_TEXTURE_2D, s->texture);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->element_buffer_object);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
@@ -294,6 +342,11 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
+  if (!LoadTextures(s)) {
+    printf("Failed loading textures.\n");
+    to_return = 1;
+    goto cleanup;
+  }
   if (!SetupShaderProgram(s)) {
     to_return = 1;
     goto cleanup;
@@ -303,8 +356,6 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
-  // TODO (next): Continue with the "Shaders" part of the tutorial:
-  //   https://learnopengl.com/Getting-started/Shaders
   if (!RunMainLoop(s)) {
     printf("Application ended with an error.\n");
     to_return = 1;
