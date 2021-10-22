@@ -29,7 +29,8 @@ void FreeApplicationState(ApplicationState *s) {
   if (!s) return;
   if (s->window) glfwDestroyWindow(s->window);
   glDeleteProgram(s->shader_program);
-  glDeleteTextures(1, &(s->texture));
+  glDeleteTextures(1, &(s->box_texture));
+  glDeleteTextures(1, &(s->face_texture));
   glDeleteVertexArrays(1, &(s->vertex_array_object));
   glDeleteBuffers(1, &(s->element_buffer_object));
   glDeleteBuffers(1, &(s->vertex_buffer_object));
@@ -168,6 +169,7 @@ static int SetupVertexBuffer(ApplicationState *s) {
   glBindVertexArray(s->vertex_array_object);
   glGenBuffers(1, &(s->element_buffer_object));
   glGenBuffers(1, &(s->vertex_buffer_object));
+  // The element buffer object is associated with the VAO.
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->element_buffer_object);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, s->vertex_buffer_object);
@@ -256,13 +258,16 @@ static int SetupShaderProgram(ApplicationState *s) {
   return CheckGLErrors();
 }
 
-// Loads any image texture(s) needed by the application. Returns 0 on error.
-static int LoadTextures(ApplicationState *s) {
+// Loads a texture, returning the ID of the new OpenGL texture. Returns 0 on
+// error. If this returns nonzero, then the texture should be destroyed by the
+// caller.
+static GLuint LoadTexture(const char *filename) {
+  GLuint to_return = 0;
   int width, height, channels;
-  unsigned char *image_data = stbi_load("container.jpg", &width, &height,
-    &channels, 3);
+  unsigned char *image_data = stbi_load(filename, &width, &height, &channels,
+    4);
   if (!image_data) {
-    printf("Failed loading container.jpg.\n");
+    printf("Failed loading image %s\n", filename);
     return 0;
   }
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
@@ -270,14 +275,29 @@ static int LoadTextures(ApplicationState *s) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
     GL_LINEAR_MIPMAP_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glGenTextures(1, &(s->texture));
-  glBindTexture(GL_TEXTURE_2D, s->texture);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB,
+  glGenTextures(1, &to_return);
+  glBindTexture(GL_TEXTURE_2D, to_return);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
     GL_UNSIGNED_BYTE, image_data);
   glGenerateMipmap(GL_TEXTURE_2D);
   stbi_image_free(image_data);
   image_data = NULL;
-  return CheckGLErrors();
+  if (!CheckGLErrors()) {
+    printf("Couldn't create texture from %s\n", filename);
+    glDeleteTextures(1, &to_return);
+    return 0;
+  }
+  return to_return;
+}
+
+// Loads any image texture(s) needed by the application. Returns 0 on error.
+static int LoadTextures(ApplicationState *s) {
+  stbi_set_flip_vertically_on_load(1);
+  s->box_texture = LoadTexture("container.jpg");
+  if (!s->box_texture) return 0;
+  s->face_texture = LoadTexture("awesomeface.png");
+  if (!s->face_texture) return 0;
+  return 1;
 }
 
 // Processes window inputs. Returns 0 on error.
@@ -290,8 +310,26 @@ static int ProcessInputs(GLFWwindow *window) {
 
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
+  GLint box_tex_uniform, face_tex_uniform;
+  box_tex_uniform = glGetUniformLocation(s->shader_program, "box_texture");
+  if (box_tex_uniform < 0) {
+    printf("Failed getting uniform for box texture.\n");
+    return 0;
+  }
+  face_tex_uniform = glGetUniformLocation(s->shader_program, "face_texture");
+  if (face_tex_uniform < 0) {
+    printf("Failed getting uniform for face texture.\n");
+    return 0;
+  }
+  glUseProgram(s->shader_program);
+  // We will put the box and face textures in GL_TEXTURE0 and GL_TEXTURE1,
+  // respectively.
+  glUniform1i(box_tex_uniform, 0);
+  glUniform1i(face_tex_uniform, 1);
+
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
   while (!glfwWindowShouldClose(s->window)) {
     if (!ProcessInputs(s->window)) {
       printf("Error processing inputs.\n");
@@ -302,8 +340,11 @@ static int RunMainLoop(ApplicationState *s) {
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(s->shader_program);
-    glBindTexture(GL_TEXTURE_2D, s->texture);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->element_buffer_object);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, s->box_texture);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, s->face_texture);
+    glBindVertexArray(s->vertex_array_object);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     glfwSwapBuffers(s->window);
@@ -342,15 +383,17 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
+  if (!SetupShaderProgram(s)) {
+    to_return = 1;
+    goto cleanup;
+  }
   if (!LoadTextures(s)) {
     printf("Failed loading textures.\n");
     to_return = 1;
     goto cleanup;
   }
-  if (!SetupShaderProgram(s)) {
-    to_return = 1;
-    goto cleanup;
-  }
+  // TODO (next): Continue with https://learnopengl.com/Getting-started/Transformations
+  //  - On the transformations chapter.
   if (!CheckGLErrors()) {
     printf("OpenGL errors detected during initialization.\n");
     to_return = 1;
