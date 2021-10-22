@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <cglm/cglm.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define STBI_NO_PSD
@@ -300,6 +301,22 @@ static int LoadTextures(ApplicationState *s) {
   return 1;
 }
 
+// Sets the mat4 matrix to contain the transform we want to use for the
+// box model.
+static void GetTransform(ApplicationState *s, mat4 transform) {
+  vec3 axis, translate;
+  glm_vec3_zero(axis);
+  glm_vec3_zero(translate);
+  glm_mat4_identity(transform);
+  // Translate down and to the right.
+  translate[0] = 0.5;
+  translate[1] = -0.5;
+  glm_translate(transform, translate);
+  // Rotate over time around the z axis.
+  axis[2] = 1.0;
+  glm_rotate(transform, glfwGetTime(), axis);
+}
+
 // Processes window inputs. Returns 0 on error.
 static int ProcessInputs(GLFWwindow *window) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -310,7 +327,8 @@ static int ProcessInputs(GLFWwindow *window) {
 
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
-  GLint box_tex_uniform, face_tex_uniform;
+  mat4 transform;
+  GLint box_tex_uniform, face_tex_uniform, transform_uniform;
   box_tex_uniform = glGetUniformLocation(s->shader_program, "box_texture");
   if (box_tex_uniform < 0) {
     printf("Failed getting uniform for box texture.\n");
@@ -321,6 +339,13 @@ static int RunMainLoop(ApplicationState *s) {
     printf("Failed getting uniform for face texture.\n");
     return 0;
   }
+  transform_uniform = glGetUniformLocation(s->shader_program, "transform");
+  if (transform_uniform < 0) {
+    printf("Failed getting uniform for transform matrix.\n");
+    return 0;
+  }
+  GetTransform(s, transform);
+
   glUseProgram(s->shader_program);
   // We will put the box and face textures in GL_TEXTURE0 and GL_TEXTURE1,
   // respectively.
@@ -339,11 +364,20 @@ static int RunMainLoop(ApplicationState *s) {
     glClearColor(0.3f, 0.05f, 0.5f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    // Start using the shader program
     glUseProgram(s->shader_program);
+
+    // Update the transform matrix.
+    GetTransform(s, transform);
+    glUniformMatrix4fv(transform_uniform, 1, GL_FALSE, (float *) transform);
+
+    // Set the textures.
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s->box_texture);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, s->face_texture);
+
+    // Bind the vertex array, including the element array, and draw.
     glBindVertexArray(s->vertex_array_object);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
@@ -392,8 +426,7 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
-  // TODO (next): Continue with https://learnopengl.com/Getting-started/Transformations
-  //  - On the transformations chapter.
+  // TODO (next): Continue with https://learnopengl.com/Getting-started/Coordinate-Systems
   if (!CheckGLErrors()) {
     printf("OpenGL errors detected during initialization.\n");
     to_return = 1;

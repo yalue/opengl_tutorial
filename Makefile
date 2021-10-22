@@ -8,5 +8,5 @@ all: opengl_tutorial
 
 opengl_tutorial: opengl_tutorial.c opengl_tutorial.h
 	gcc -Wall -Werror -O3 -o opengl_tutorial opengl_tutorial.c glad/src/glad.c \
-		-Iglad/include $(GLFW_CFLAGS)
+		-Iglad/include -I cglm/include $(GLFW_CFLAGS)
 
