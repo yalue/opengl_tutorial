@@ -17,6 +17,9 @@ typedef struct {
   GLuint shader_program;
   GLuint box_texture;
   GLuint face_texture;
+  int window_width;
+  int window_height;
+  float aspect_ratio;
 } ApplicationState;
 
 // Allocates an ApplicationState struct and initializes its values to 0.

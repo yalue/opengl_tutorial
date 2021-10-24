@@ -19,10 +19,18 @@
 
 #include "opengl_tutorial.h"
 
+// The default window width and height
+#define DEFAULT_WINDOW_WIDTH (800)
+#define DEFAULT_WINDOW_HEIGHT (600)
+
 ApplicationState* AllocateApplicationState(void) {
   ApplicationState *to_return = NULL;
   to_return = calloc(1, sizeof(*to_return));
   if (!to_return) return NULL;
+  to_return->window_width = DEFAULT_WINDOW_WIDTH;
+  to_return->window_height = DEFAULT_WINDOW_HEIGHT;
+  to_return->aspect_ratio = ((float) to_return->window_width) /
+    ((float) to_return->window_height);
   return to_return;
 }
 
@@ -130,7 +138,11 @@ int CheckGLErrors(void) {
 
 static void FramebufferResizedCallback(GLFWwindow *window, int width,
     int height) {
-  glViewport(0, 0, 800, 600);
+  ApplicationState *s = (ApplicationState *) glfwGetWindowUserPointer(window);
+  s->window_width = width;
+  s->window_height = height;
+  s->aspect_ratio = ((float) s->window_width) / ((float) s->window_height);
+  glViewport(0, 0, width, height);
 }
 
 // Creates the GLFWwindow. Returns 0 on error.
@@ -139,12 +151,14 @@ static int SetupWindow(ApplicationState *s) {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  window = glfwCreateWindow(800, 600, "OpenGL tutorial", NULL, NULL);
+  window = glfwCreateWindow(s->window_width, s->window_height,
+    "OpenGL tutorial", NULL, NULL);
   if (!window) {
     printf("Failed creating GLFW window.\n");
     glfwTerminate();
     return 0;
   }
+  glfwSetWindowUserPointer(window, s);
   glfwMakeContextCurrent(window);
   s->window = window;
   return 1;
@@ -301,20 +315,28 @@ static int LoadTextures(ApplicationState *s) {
   return 1;
 }
 
-// Sets the mat4 matrix to contain the transform we want to use for the
-// box model.
-static void GetTransform(ApplicationState *s, mat4 transform) {
-  vec3 axis, translate;
+// Gets the view and projection matrices for the scene.
+static void GetViewAndProjection(ApplicationState *s, mat4 view,
+    mat4 projection) {
+  vec3 view_translate;
+  glm_mat4_identity(view);
+  glm_mat4_identity(projection);
+  glm_vec3_zero(view_translate);
+  // Move our viewpoint 3 units "back" from the origin (along the z axis)
+  view_translate[2] = -3.0;
+  glm_translate(view, view_translate);
+  // Create a perspective, with 45 degree FOV
+  glm_perspective(45.0, s->aspect_ratio, 0.01, 100.0, projection);
+}
+
+// Sets the given matrix to the model's transform matrix.
+static void GetModelTransform(ApplicationState *s, mat4 transform) {
+  vec3 axis;
   glm_vec3_zero(axis);
-  glm_vec3_zero(translate);
   glm_mat4_identity(transform);
-  // Translate down and to the right.
-  translate[0] = 0.5;
-  translate[1] = -0.5;
-  glm_translate(transform, translate);
-  // Rotate over time around the z axis.
-  axis[2] = 1.0;
-  glm_rotate(transform, glfwGetTime(), axis);
+  // Rotate over time around the x axis.
+  axis[0] = 1.0;
+  glm_rotate(transform, -glfwGetTime(), axis);
 }
 
 // Processes window inputs. Returns 0 on error.
@@ -325,28 +347,35 @@ static int ProcessInputs(GLFWwindow *window) {
   return 1;
 }
 
+// Sets *index to the index of the named uniform in s->shader_program. Returns
+// 0 and prints a message on error.
+static int UniformIndex(ApplicationState *s, const char *name, GLint *index) {
+  *index = glGetUniformLocation(s->shader_program, name);
+  if (*index < 0) {
+    printf("Failed getting location of uniform %s.\n", name);
+    return 0;
+  }
+  return 1;
+}
+
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
-  mat4 transform;
-  GLint box_tex_uniform, face_tex_uniform, transform_uniform;
-  box_tex_uniform = glGetUniformLocation(s->shader_program, "box_texture");
-  if (box_tex_uniform < 0) {
-    printf("Failed getting uniform for box texture.\n");
-    return 0;
-  }
-  face_tex_uniform = glGetUniformLocation(s->shader_program, "face_texture");
-  if (face_tex_uniform < 0) {
-    printf("Failed getting uniform for face texture.\n");
-    return 0;
-  }
-  transform_uniform = glGetUniformLocation(s->shader_program, "transform");
-  if (transform_uniform < 0) {
-    printf("Failed getting uniform for transform matrix.\n");
-    return 0;
-  }
-  GetTransform(s, transform);
+  mat4 model_transform, view, projection;
+  GLint box_tex_uniform, face_tex_uniform, model_uniform, view_uniform,
+    projection_uniform;
+  if (!UniformIndex(s, "box_texture", &box_tex_uniform)) return 0;
+  if (!UniformIndex(s, "face_texture", &face_tex_uniform)) return 0;
+  if (!UniformIndex(s, "model_transform", &model_uniform)) return 0;
+  if (!UniformIndex(s, "view_transform", &view_uniform)) return 0;
+  if (!UniformIndex(s, "projection_transform", &projection_uniform)) return 0;
+  GetModelTransform(s, model_transform);
+  GetViewAndProjection(s, view, projection);
 
   glUseProgram(s->shader_program);
+  // For now, we only need to set the view and projection uniforms once.
+  glUniformMatrix4fv(view_uniform, 1, GL_FALSE, (float *) view);
+  glUniformMatrix4fv(projection_uniform, 1, GL_FALSE, (float *) projection);
+
   // We will put the box and face textures in GL_TEXTURE0 and GL_TEXTURE1,
   // respectively.
   glUniform1i(box_tex_uniform, 0);
@@ -367,9 +396,10 @@ static int RunMainLoop(ApplicationState *s) {
     // Start using the shader program
     glUseProgram(s->shader_program);
 
-    // Update the transform matrix.
-    GetTransform(s, transform);
-    glUniformMatrix4fv(transform_uniform, 1, GL_FALSE, (float *) transform);
+    // Update the model transform
+    GetModelTransform(s, model_transform);
+    glUniformMatrix4fv(model_uniform, 1, GL_FALSE, (float *) model_transform);
+    // TODO: Update the view and projection uniforms if needed, too.
 
     // Set the textures.
     glActiveTexture(GL_TEXTURE0);
@@ -410,7 +440,7 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
-  glViewport(0, 0, 800, 600);
+  glViewport(0, 0, s->window_width, s->window_height);
   glfwSetFramebufferSizeCallback(s->window, FramebufferResizedCallback);
   if (!SetupVertexBuffer(s)) {
     printf("Failed setting up vertex buffer.\n");
