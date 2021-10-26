@@ -17,6 +17,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include "parse_obj.h"
 #include "opengl_tutorial.h"
 
 // The default window width and height
@@ -166,33 +167,43 @@ static int SetupWindow(ApplicationState *s) {
 
 // Allocates the vertex buffer. Returns 0 on error.
 static int SetupVertexBuffer(ApplicationState *s) {
+  ObjectFileInfo *object = NULL;
+  char *obj_file_content = NULL;
+  obj_file_content = (char *) ReadFullFile("cube.obj");
+  if (!obj_file_content) return 0;
+  object = ParseObjFile(obj_file_content);
+  free(obj_file_content);
+  if (!object) {
+    printf("Failed parsing .obj file.\n");
+    return 0;
+  }
+
   // Each row:
   //  - First three values: position (x, y, z)
-  //  - Second three values: color (r, g, b)
+  //  - Next three values: normal (x, y, z)
   //  - Next two values: texture coordinate (u, v)
-  float vertices[] = {
-    0.5, 0.5, 0, 1.0, 0.0, 0.0, 1.0, 1.0,
-    0.5, -0.5, 0, 0.0, 1.0, 0.0, 1.0, 0.0,
-    -0.5, -0.5, 0, 0.0, 0.0, 1.0, 0.0, 0.0,
-    -0.5, 0.5, 0, 0.5, 0.5, 0.5, 0.0, 1.0,
-  };
-  GLuint indices[] = {
-    0, 1, 2,
-    2, 3, 0,
-  };
+
   glGenVertexArrays(1, &(s->vertex_array_object));
   glBindVertexArray(s->vertex_array_object);
   glGenBuffers(1, &(s->element_buffer_object));
   glGenBuffers(1, &(s->vertex_buffer_object));
   // The element buffer object is associated with the VAO.
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->element_buffer_object);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, object->index_count * sizeof(GLuint),
+    object->indices, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, s->vertex_buffer_object);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, object->vertex_count * 8 * sizeof(float),
+    object->vertices, GL_STATIC_DRAW);
 
-  // Set up the positions and colors to interleave:
-  //  - Each has 3 values, so a stride of 6.
-  //  - Colors are at attribute 1, and start at the fourth float in the array.
+  // We can free the object now that we've copied the data.
+  FreeObjectFileInfo(object);
+  object = NULL;
+
+  // Set up the positions, normals, and texture coordinate attributes:
+  //  - All have a stride of 8.
+  //  - Location = attribute 0
+  //  - Normal = attribute 1
+  //  - UV coordinate = attribute 2
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), 0);
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
@@ -383,6 +394,7 @@ static int RunMainLoop(ApplicationState *s) {
 
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+  glEnable(GL_DEPTH_TEST);
 
   while (!glfwWindowShouldClose(s->window)) {
     if (!ProcessInputs(s->window)) {
@@ -391,7 +403,7 @@ static int RunMainLoop(ApplicationState *s) {
     }
 
     glClearColor(0.3f, 0.05f, 0.5f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Start using the shader program
     glUseProgram(s->shader_program);
