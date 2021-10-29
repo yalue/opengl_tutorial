@@ -165,11 +165,27 @@ static int SetupWindow(ApplicationState *s) {
   return 1;
 }
 
+// Prints debug info about the given object file.
+static void PrintObjectFileInfo(ObjectFileInfo *o) {
+  uint32_t i, j;
+  for (i = 0; i < o->vertex_count; i++) {
+    printf("Vertex index %d:", (int) i);
+    for (j = 0; j < 8; j++) {
+      printf(" %f", o->vertices[i].data[j]);
+    }
+    printf("\n");
+  }
+  for (i = 0; i < o->index_count; i++) {
+    printf("Element index %d/%d: %d\n", (int) i + 1, (int) o->index_count,
+      (int) o->indices[i]);
+  }
+}
+
 // Allocates the vertex buffer. Returns 0 on error.
 static int SetupVertexBuffer(ApplicationState *s) {
   ObjectFileInfo *object = NULL;
   char *obj_file_content = NULL;
-  obj_file_content = (char *) ReadFullFile("cube.obj");
+  obj_file_content = (char *) ReadFullFile("pyramid.obj");
   if (!obj_file_content) return 0;
   object = ParseObjFile(obj_file_content);
   free(obj_file_content);
@@ -177,6 +193,7 @@ static int SetupVertexBuffer(ApplicationState *s) {
     printf("Failed parsing .obj file.\n");
     return 0;
   }
+  PrintObjectFileInfo(object);
 
   // Each row:
   //  - First three values: position (x, y, z)

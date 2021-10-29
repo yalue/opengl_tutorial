@@ -2,8 +2,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "scapegoat_tree.h"
 #include "parse_obj.h"
 
+// Maps internal "indices," consisting of the three numbers in the object file,
+// to final indices, which refer to a single ObjectFileVertex struct.
+typedef struct {
+  // The three internal indices.
+  uint32_t index_triple[3];
+  // The single index into the vertices in the ObjectFileInfo struct.
+  // Initialized after the entire file has been parsed.
+  uint32_t final_index;
+} InternalIndexMapping;
+
+// Holds important parsed file content, prior to merging the list of locations,
+// normals, and uv coords into the ObjectFileVertex struct.
 typedef struct {
   // Contains each vertex's location coordinate, as specified by "v" lines in
   // the file. Contains 3 * location_count floats.
@@ -27,7 +40,9 @@ typedef struct {
   // specifying the location, UV coordinate, and normal in their respective
   // arrays. So this contains index_count * 3 uint32_t values. Additionally,
   // the index_count must be divisible by 3, since we're expecting triangles.
-  uint32_t *indices;
+  // Contains each index in the file. Each face consists of 3 groups of 3 or
+  // fewer indices. So, index_count / 3 = # of faces.
+  InternalIndexMapping *indices;
   uint32_t index_count;
   // The number of indices we've already seen, if we're parsing the file.
   uint32_t indices_read;
@@ -155,7 +170,7 @@ static int CountVerticesAndIndices(const char *content,
 // zero.
 static int AllocateTemporaryBuffers(InternalObjectFile *o) {
   float *locations = NULL, *normals = NULL, *uv_coords = NULL;
-  uint32_t *indices = NULL;
+  InternalIndexMapping *indices = NULL;
   locations = (float *) calloc(sizeof(float), 3 * o->location_count);
   if (!locations) return 0;
   normals = (float *) calloc(sizeof(float), 3 * o->normal_count);
@@ -169,7 +184,8 @@ static int AllocateTemporaryBuffers(InternalObjectFile *o) {
     free(normals);
     return 0;
   }
-  indices = (uint32_t *) calloc(sizeof(uint32_t), 3 * o->index_count);
+  indices = (InternalIndexMapping *) calloc(sizeof(InternalIndexMapping),
+    o->index_count);
   if (!indices) {
     free(locations);
     free(normals);
@@ -229,12 +245,33 @@ static int ParseFloats(int n, const char *line, float *out) {
 // Reads the next 3 '/'-separated indices from s. s may have leading
 // whitepsace. out must have space to store the 3 indices. Returns the first
 // character after the third index. Returns NULL on error.
-static const char* ParseNext3Indices(const char *s, uint32_t *out) {
+// Reads the next indices in a face from s. s may have leading whitespace. out
+// must have space to store 3 indices.  Returns the first character after the
+// indices (or single index).  If only one or two indices were specified, the
+// remaining of the three indices in out will be set to 0.
+static const char* ParseNextIndices(const char *s, uint32_t *out) {
   int i;
   unsigned long tmp;
   char *end = NULL;
   s = SkipSpaces(s);
   for (i = 0; i < 3; i++) {
+    // If we're already seeing a space, then the obj file didn't define all
+    // three indices for this vertex in the face.
+    if ((*s == ' ') || (*s == '\t') || (*s == '\n')) {
+      // Set the value, but don't consume a character.
+      out[i] = 0;
+      continue;
+    }
+    // Leave values at 0 if they are omitted in the file, i.e. something like
+    // "1//3", which omits the texture coordinate index.
+    if (*s == '/') {
+      out[i] = 0;
+      // Advance past the '/'
+      s++;
+      continue;
+    }
+
+    // At this point, we must be looking at a number.
     tmp = strtoul(s, &end, 10);
     if (s == end) {
       printf("String doesn't start with a number.\n");
@@ -242,30 +279,27 @@ static const char* ParseNext3Indices(const char *s, uint32_t *out) {
     }
     // Advance past the number.
     s = end;
-    if ((i < 2) && (*s != '/')) {
-      printf("Didn't find 3 indices separated by '/'.\n");
-      return NULL;
-    }
-    out[i] = tmp;
+    // The indices in the file start at 1 rather than 0.
+    out[i] = tmp - 1;
     // Skip the '/' for the first two numbers.
-    if (i < 2) s++;
+    if ((i < 2) && (*s == '/')) s++;
   }
   return s;
 }
 
-// Reads 9 indices in a single face: 3 space-separated sets of 3 '/'-separated
-// indices. Returns 0 on error. The out buffer must have space for 9 indces.
-// The line may have leading whitespace.
-static int ParseFace(const char *line, uint32_t *out) {
+// Reads 3 sets of indices for a single face: 3 space-separated sets of 3
+// '/'-separated indices. Returns 0 on error. The out buffer must have space
+// for 3 indces. The line may have leading whitespace.
+static int ParseFace(const char *line, InternalIndexMapping *out) {
   int i;
   uint32_t indices[3];
   for (i = 0; i < 3; i++) {
-    line = ParseNext3Indices(line, indices);
+    line = ParseNextIndices(line, indices);
     if (line == NULL) {
-      printf("Failed parsing 3 indices group %d/3.\n", i);
+      printf("Failed parsing indices group %d/3.\n", i);
       return 0;
     }
-    memcpy(out + (3 * i), indices, sizeof(indices));
+    memcpy(out[i].index_triple, indices, sizeof(indices));
   }
   return 1;
 }
@@ -275,7 +309,7 @@ static int ParseFace(const char *line, uint32_t *out) {
 // line's content.
 static const char* ParseLine(const char *line, InternalObjectFile *o) {
   float parsed_floats[3];
-  uint32_t parsed_indices[9];
+  InternalIndexMapping parsed_indices[3];
   line = SkipSpaces(line);
 
   // Skip comments.
@@ -333,6 +367,7 @@ static const char* ParseLine(const char *line, InternalObjectFile *o) {
 
   if (StartsWith(line, "f ")) {
     line += 1;
+    memset(parsed_indices, 0, sizeof(parsed_indices));
     if (!ParseFace(line, parsed_indices)) {
       printf("Failed parsing face coord indices.\n");
       return NULL;
@@ -341,8 +376,8 @@ static const char* ParseLine(const char *line, InternalObjectFile *o) {
       printf("Internal error: read more than expected number of indices.\n");
       return NULL;
     }
-    memcpy(o->indices + (3 * o->indices_read), parsed_indices,
-      9 * sizeof(uint32_t));
+    memcpy(o->indices + o->indices_read, parsed_indices,
+      sizeof(parsed_indices));
     o->indices_read += 3;
     return SkipLine(line);
   }
@@ -366,17 +401,105 @@ static int ParseInternalObjectFile(const char *content,
   return 1;
 }
 
+// This comparator is used to sort or search an array of InternalIndexMapping
+// structs. It only compares the "internal" indices, ignoring the final_index.
+static int InternalIndexComparator(const void *a, const void *b) {
+  const InternalIndexMapping *first = (const InternalIndexMapping *) a;
+  const InternalIndexMapping *second = (const InternalIndexMapping *) b;
+  int i;
+  // Check each element in turn.
+  for (i = 0; i < 3; i++) {
+    if (first->index_triple[i] < second->index_triple[i]) return -1;
+    if (first->index_triple[i] > second->index_triple[i]) return 1;
+  }
+  // All of the elements matched.
+  return 0;
+}
+
+// Sets the final_index field for each of the indices array, which must already
+// be sorted so that identical entries are adjacent. Returns the total number
+// of unique vertices.
+static uint32_t AssignUniqueIndices(InternalIndexMapping *indices,
+    uint32_t length) {
+  uint32_t i = 0, to_return = 0;
+  InternalIndexMapping *prev = NULL;
+  InternalIndexMapping *curr = NULL;
+  if (length == 0) return 0;
+  // Initialize the first final index to 0. Also, we have at least one unique
+  // vertex.
+  to_return = 1;
+  indices[0].final_index = 0;
+
+  for (i = 1; i < length; i++) {
+    curr = indices + i;
+    prev = indices + i - 1;
+    if (InternalIndexComparator(curr, prev) == 0) {
+      // If we're identical to the previous index group, then we get the same
+      // final vertex index.
+      curr->final_index = to_return - 1;
+      continue;
+    }
+    // We're not identical to the previous index group, so we get the next
+    // final vertex index, and increment the number of unique vertices.
+    curr->final_index = to_return;
+    to_return++;
+  }
+  return to_return;
+}
+
+// Used when searching for an InternalIndexMapping with a final_index of a.
+// The 'a' argument is a uint32_t*.  The b argument is a InternalIndexMapping*.
+static int FinalIndexSearchComparator(const void *a, const void *b) {
+  const uint32_t *key = (const uint32_t *) a;
+  const InternalIndexMapping *v = (const InternalIndexMapping *) b;
+  if (*key < v->final_index) return -1;
+  if (*key > v->final_index) return 1;
+  return 0;
+}
+
+// Constructs v using the data indicated by the InternalIndexMapping and o.
+// Ignores any indices greater than the number of corresponding attributes in
+// the object file, leaving the ObjectFileVertex fields at 0 for the incorrect
+// or undefined attributes.
+static void CopyVertexInfo(InternalIndexMapping *indices, ObjectFileVertex *v,
+   InternalObjectFile *o) {
+  uint32_t i;
+  // NOTE: Should we print a warning or something if we get a nonzero index
+  // that's invalid?
+
+  // Location
+  i = indices->index_triple[0];
+  if (i < o->location_count) {
+    memcpy(v->location, o->locations + (3 * i), sizeof(v->location));
+  }
+  // UV Coordinate (aka texture coordinate)
+  i = indices->index_triple[1];
+  if (i < o->uv_coord_count) {
+    memcpy(v->uv, o->uv_coords + (2 * i), sizeof(v->uv));
+  }
+  // Normal
+  i = indices->index_triple[2];
+  if (i < o->normal_count) {
+    memcpy(v->normal, o->normals + (3 * i), sizeof(v->normal));
+  }
+}
+
 // Converts the data collected in o to the format in the ObjectFileInfo struct.
 // Returns 0 on error.
 static int ConvertInternalObjectFile(InternalObjectFile *o,
     ObjectFileInfo *out) {
+  InternalIndexMapping *sorted_indices = NULL;
+  InternalIndexMapping *tmp = NULL;
+  ObjectFileVertex *final_vertices = NULL;
+  uint32_t *final_indices = NULL;
+  uint32_t i, unique_vertex_count;
+
+  // Do some sanity checks to make sure the second pass was OK.
   printf("Object file info:\n");
   printf("  # of vertex locations: %d\n", (int) o->location_count);
   printf("  # of normals: %d\n", (int) o->normal_count);
   printf("  # of UV coordinates: %d\n", (int) o->uv_coord_count);
   printf("  # of indices: %d\n", (int) o->index_count);
-
-  // Do some sanity checks to make sure the second pass was OK.
   if (o->location_count != o->locations_read) {
     printf("Expected to parse %d locations, got %d.\n",
       (int) o->location_count, (int) o->locations_read);
@@ -397,8 +520,80 @@ static int ConvertInternalObjectFile(InternalObjectFile *o,
       (int) o->indices_read);
     return 0;
   }
-  // TODO (next): Implement ConvertInternalObjectFile.
-  printf("Converting object file not implemented yet.\n");
+
+  // Create a sorted copy of the indices array, so we can detect how many
+  // unique vertices we have.
+  sorted_indices = (InternalIndexMapping *) calloc(sizeof(InternalIndexMapping),
+    o->index_count);
+  if (!sorted_indices) {
+    printf("Failed allocating copy of internal indices array.\n");
+    return 0;
+  }
+  memcpy(sorted_indices, o->indices, sizeof(InternalIndexMapping) *
+    o->index_count);
+  qsort(sorted_indices, o->index_count, sizeof(InternalIndexMapping),
+    InternalIndexComparator);
+
+  // Count the number of unique vertices (vertices with a unique combination of
+  // location, normal, and uv coordinate).
+  unique_vertex_count = AssignUniqueIndices(sorted_indices, o->index_count);
+  final_vertices = (ObjectFileVertex *) calloc(sizeof(ObjectFileVertex),
+    unique_vertex_count);
+  if (!final_vertices) {
+    printf("Failed allocating ObjectFileVertex array.\n");
+    goto fail_cleanup;
+  }
+
+  // Fill in the final_vertices array.
+  for (i = 0; i < unique_vertex_count; i++) {
+    // Look up the corresponding InternalIndexMapping using bsearch. (They were
+    // constructed with the final_index fields in increasing sequential order.)
+    tmp = (InternalIndexMapping *) bsearch(&i, sorted_indices, o->index_count,
+      sizeof(InternalIndexMapping), FinalIndexSearchComparator);
+    if (!tmp) {
+      // This would be quite an odd internal error.
+      printf("Failed finding vertex attributes for unique vertex %d.\n",
+        (int) i);
+      goto fail_cleanup;
+    }
+    // Copy the values indicated by the InternalIndexMapping into the
+    // corresponding final_vertices entry.
+    CopyVertexInfo(tmp, final_vertices + i, o);
+  }
+
+  // Finally, create the array of final vertex indices, in the order they were
+  // in the .obj file, but with the updated single indices.
+  final_indices = (uint32_t *) calloc(sizeof(uint32_t), o->index_count);
+  if (!final_indices) {
+    printf("Failed allocating final index array.\n");
+    goto fail_cleanup;
+  }
+  for (i = 0; i < o->index_count; i++) {
+    // Search for the entry in the sorted array with the same three indices.
+    tmp = (InternalIndexMapping *) bsearch(o->indices + i, sorted_indices,
+      o->index_count, sizeof(InternalIndexMapping), InternalIndexComparator);
+    if (!tmp) {
+      // Another sanity check for an internal error.
+      printf("Failed finding final index for internal vertex info.\n");
+      goto fail_cleanup;
+    }
+    final_indices[i] = tmp->final_index;
+  }
+
+  // Finally, we've identified unique location/normal/uv combinations, built
+  // the list of corresponding vertices, and mapped original index triples to
+  // the new list of vertices.
+  out->indices = final_indices;
+  out->index_count = o->index_count;
+  out->vertices = final_vertices;
+  out->vertex_count = unique_vertex_count;
+  free(sorted_indices);
+  return 1;
+
+fail_cleanup:
+  free(sorted_indices);
+  free(final_indices);
+  free(final_vertices);
   return 0;
 }
 
