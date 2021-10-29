@@ -48,6 +48,13 @@ typedef struct {
   uint32_t indices_read;
 } InternalObjectFile;
 
+// Used when traversing a tree containing information about unique vertices.
+typedef struct {
+  InternalObjectFile *o;
+  ObjectFileVertex *final_vertices;
+  uint32_t next_index;
+} TraversalCallbackData;
+
 // Returns the pointer to the next character after in that is non-whitespace.
 // This does *not* count newlines as whitespace.
 static const char* SkipSpaces(const char *in) {
@@ -416,47 +423,6 @@ static int InternalIndexComparator(const void *a, const void *b) {
   return 0;
 }
 
-// Sets the final_index field for each of the indices array, which must already
-// be sorted so that identical entries are adjacent. Returns the total number
-// of unique vertices.
-static uint32_t AssignUniqueIndices(InternalIndexMapping *indices,
-    uint32_t length) {
-  uint32_t i = 0, to_return = 0;
-  InternalIndexMapping *prev = NULL;
-  InternalIndexMapping *curr = NULL;
-  if (length == 0) return 0;
-  // Initialize the first final index to 0. Also, we have at least one unique
-  // vertex.
-  to_return = 1;
-  indices[0].final_index = 0;
-
-  for (i = 1; i < length; i++) {
-    curr = indices + i;
-    prev = indices + i - 1;
-    if (InternalIndexComparator(curr, prev) == 0) {
-      // If we're identical to the previous index group, then we get the same
-      // final vertex index.
-      curr->final_index = to_return - 1;
-      continue;
-    }
-    // We're not identical to the previous index group, so we get the next
-    // final vertex index, and increment the number of unique vertices.
-    curr->final_index = to_return;
-    to_return++;
-  }
-  return to_return;
-}
-
-// Used when searching for an InternalIndexMapping with a final_index of a.
-// The 'a' argument is a uint32_t*.  The b argument is a InternalIndexMapping*.
-static int FinalIndexSearchComparator(const void *a, const void *b) {
-  const uint32_t *key = (const uint32_t *) a;
-  const InternalIndexMapping *v = (const InternalIndexMapping *) b;
-  if (*key < v->final_index) return -1;
-  if (*key > v->final_index) return 1;
-  return 0;
-}
-
 // Constructs v using the data indicated by the InternalIndexMapping and o.
 // Ignores any indices greater than the number of corresponding attributes in
 // the object file, leaving the ObjectFileVertex fields at 0 for the incorrect
@@ -484,15 +450,26 @@ static void CopyVertexInfo(InternalIndexMapping *indices, ObjectFileVertex *v,
   }
 }
 
+// Used when traversing a binary tree of unique internal vertex mappings to
+// populate the final list of vertices and assign final indices.
+static void TreeTraversalCallback(void *key, void *user_data) {
+  TraversalCallbackData *data = (TraversalCallbackData *) user_data;
+  InternalIndexMapping *v = (InternalIndexMapping *) key;
+  v->final_index = data->next_index;
+  CopyVertexInfo(v, data->final_vertices + data->next_index, data->o);
+  data->next_index += 1;
+}
+
 // Converts the data collected in o to the format in the ObjectFileInfo struct.
 // Returns 0 on error.
 static int ConvertInternalObjectFile(InternalObjectFile *o,
     ObjectFileInfo *out) {
-  InternalIndexMapping *sorted_indices = NULL;
   InternalIndexMapping *tmp = NULL;
   ObjectFileVertex *final_vertices = NULL;
+  ScapegoatTree *vertex_set = NULL;
+  TraversalCallbackData callback_data;
   uint32_t *final_indices = NULL;
-  uint32_t i, unique_vertex_count;
+  uint32_t i;
 
   // Do some sanity checks to make sure the second pass was OK.
   printf("Object file info:\n");
@@ -521,45 +498,33 @@ static int ConvertInternalObjectFile(InternalObjectFile *o,
     return 0;
   }
 
-  // Create a sorted copy of the indices array, so we can detect how many
-  // unique vertices we have.
-  sorted_indices = (InternalIndexMapping *) calloc(sizeof(InternalIndexMapping),
-    o->index_count);
-  if (!sorted_indices) {
-    printf("Failed allocating copy of internal indices array.\n");
+  // Create a tree to hold the list of unique vertices.
+  vertex_set = CreateScapegoatTree(InternalIndexComparator);
+  if (!vertex_set) {
+    printf("Failed creating tree to track unique vertices.\n");
     return 0;
   }
-  memcpy(sorted_indices, o->indices, sizeof(InternalIndexMapping) *
-    o->index_count);
-  qsort(sorted_indices, o->index_count, sizeof(InternalIndexMapping),
-    InternalIndexComparator);
+  for (i = 0; i < o->index_count; i++) {
+    if (!ScapegoatInsert(vertex_set, o->indices + i)) {
+      printf("Failed inserting vertex into tree.\n");
+      DestroyScapegoatTree(vertex_set);
+      return 0;
+    }
+  }
 
-  // Count the number of unique vertices (vertices with a unique combination of
-  // location, normal, and uv coordinate).
-  unique_vertex_count = AssignUniqueIndices(sorted_indices, o->index_count);
+  // Traverse the tree in order to populate the list of final vertex data.
   final_vertices = (ObjectFileVertex *) calloc(sizeof(ObjectFileVertex),
-    unique_vertex_count);
+    vertex_set->tree_size);
   if (!final_vertices) {
-    printf("Failed allocating ObjectFileVertex array.\n");
+    printf("Failed allocating list of final vertices.\n");
     goto fail_cleanup;
   }
-
-  // Fill in the final_vertices array.
-  for (i = 0; i < unique_vertex_count; i++) {
-    // Look up the corresponding InternalIndexMapping using bsearch. (They were
-    // constructed with the final_index fields in increasing sequential order.)
-    tmp = (InternalIndexMapping *) bsearch(&i, sorted_indices, o->index_count,
-      sizeof(InternalIndexMapping), FinalIndexSearchComparator);
-    if (!tmp) {
-      // This would be quite an odd internal error.
-      printf("Failed finding vertex attributes for unique vertex %d.\n",
-        (int) i);
-      goto fail_cleanup;
-    }
-    // Copy the values indicated by the InternalIndexMapping into the
-    // corresponding final_vertices entry.
-    CopyVertexInfo(tmp, final_vertices + i, o);
-  }
+  // Traverse the tree in order, to create a list of final vertices and assign
+  // indices.
+  memset(&callback_data, 0, sizeof(callback_data));
+  callback_data.o = o;
+  callback_data.final_vertices = final_vertices;
+  TraverseScapegoatTree(vertex_set, TreeTraversalCallback, &callback_data);
 
   // Finally, create the array of final vertex indices, in the order they were
   // in the .obj file, but with the updated single indices.
@@ -570,10 +535,9 @@ static int ConvertInternalObjectFile(InternalObjectFile *o,
   }
   for (i = 0; i < o->index_count; i++) {
     // Search for the entry in the sorted array with the same three indices.
-    tmp = (InternalIndexMapping *) bsearch(o->indices + i, sorted_indices,
-      o->index_count, sizeof(InternalIndexMapping), InternalIndexComparator);
+    tmp = (InternalIndexMapping *) ScapegoatSearch(vertex_set, o->indices + i);
     if (!tmp) {
-      // Another sanity check for an internal error.
+      // Sanity check for an internal error.
       printf("Failed finding final index for internal vertex info.\n");
       goto fail_cleanup;
     }
@@ -586,12 +550,12 @@ static int ConvertInternalObjectFile(InternalObjectFile *o,
   out->indices = final_indices;
   out->index_count = o->index_count;
   out->vertices = final_vertices;
-  out->vertex_count = unique_vertex_count;
-  free(sorted_indices);
+  out->vertex_count = vertex_set->tree_size;
+  DestroyScapegoatTree(vertex_set);
   return 1;
 
 fail_cleanup:
-  free(sorted_indices);
+  DestroyScapegoatTree(vertex_set);
   free(final_indices);
   free(final_vertices);
   return 0;

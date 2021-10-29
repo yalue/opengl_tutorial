@@ -17,6 +17,7 @@ typedef struct {
   GLuint shader_program;
   GLuint box_texture;
   GLuint face_texture;
+  GLuint elements_to_draw;
   int window_width;
   int window_height;
   float aspect_ratio;

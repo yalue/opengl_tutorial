@@ -16,9 +16,9 @@ vt 0.0 0.0
 # 2: Bottom R
 vt 1.0 0.0
 # 3: Top R
-vt 0.0 1.0
+vt 1.0 1.0
 # 4: Top L
-vt 1.0 0.0
+vt 0.0 1.0
 # 5: Top Mid
 vt 0.5 1.0
 
