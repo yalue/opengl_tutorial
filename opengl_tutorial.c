@@ -9,15 +9,10 @@
 #include <cglm/cglm.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#define STBI_NO_PSD
-#define STBI_NO_TGA
-#define STBI_NO_GIF
-#define STBI_NO_HDR
-#define STBI_NO_PIC
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 
+#include "model.h"
 #include "parse_obj.h"
+#include "utilities.h"
 #include "opengl_tutorial.h"
 
 // The default window width and height
@@ -39,102 +34,9 @@ void FreeApplicationState(ApplicationState *s) {
   if (!s) return;
   if (s->window) glfwDestroyWindow(s->window);
   glDeleteProgram(s->shader_program);
-  glDeleteTextures(1, &(s->box_texture));
-  glDeleteTextures(1, &(s->face_texture));
-  glDeleteVertexArrays(1, &(s->vertex_array_object));
-  glDeleteBuffers(1, &(s->element_buffer_object));
-  glDeleteBuffers(1, &(s->vertex_buffer_object));
+  DestroyMesh(s->mesh);
   memset(s, 0, sizeof(*s));
   free(s);
-}
-
-uint8_t* ReadFullFile(const char *path) {
-  long size = 0;
-  uint8_t *to_return = NULL;
-  FILE *f = fopen(path, "rb");
-  if (!f) {
-    printf("Failed opening %s: %s\n", path, strerror(errno));
-    return NULL;
-  }
-  if (fseek(f, 0, SEEK_END) != 0) {
-    printf("Failed seeking end of %s: %s\n", path, strerror(errno));
-    fclose(f);
-    return NULL;
-  }
-  size = ftell(f);
-  if (size < 0) {
-    printf("Failed getting size of %s: %s\n", path, strerror(errno));
-    fclose(f);
-    return NULL;
-  }
-  if ((size + 1) < 0) {
-    printf("File %s too big.\n", path);
-    fclose(f);
-    return NULL;
-  }
-  if (fseek(f, 0, SEEK_SET) != 0) {
-    printf("Failed rewinding to start of %s: %s\n", path, strerror(errno));
-    fclose(f);
-    return NULL;
-  }
-  // Use size + 1 to null-terminate the data.
-  to_return = (uint8_t *) calloc(1, size + 1);
-  if (!to_return) {
-    printf("Failed allocating buffer to hold contents of %s.\n", path);
-    fclose(f);
-    return NULL;
-  }
-  if (fread(to_return, size, 1, f) < 1) {
-    printf("Failed reading %s: %s\n", path, strerror(errno));
-    fclose(f);
-    free(to_return);
-    return NULL;
-  }
-  fclose(f);
-  return to_return;
-}
-
-static void PrintGLErrorString(GLenum error) {
-  switch (error) {
-  case GL_NO_ERROR:
-    printf("No OpenGL error");
-    return;
-  case GL_INVALID_ENUM:
-    printf("Invalid enum");
-    return;
-  case GL_INVALID_VALUE:
-    printf("Invalid value");
-    return;
-  case GL_INVALID_OPERATION:
-    printf("Invalid operation");
-    return;
-  // GL_STACK_OVERFLOW is undefined; bug in GLAD
-  case 0x503:
-    printf("Stack overflow");
-    return;
-  // GL_STACK_UNDERFLOW is undefined; bug in GLAD
-  case 0x504:
-    printf("Stack underflow");
-    return;
-  case GL_OUT_OF_MEMORY:
-    printf("Out of memory");
-    return;
-  default:
-    break;
-  }
-  printf("Unknown OpenGL error: %d", (int) error);
-}
-
-int CheckGLErrors(void) {
-  GLenum error = glGetError();
-  if (error == GL_NO_ERROR) return 1;
-  while (error != GL_NO_ERROR) {
-    printf("Got OpenGL error: ");
-    PrintGLErrorString(error);
-    printf("\n");
-    error = glGetError();
-  }
-  return 0;
 }
 
 static void FramebufferResizedCallback(GLFWwindow *window, int width,
@@ -163,57 +65,6 @@ static int SetupWindow(ApplicationState *s) {
   glfwMakeContextCurrent(window);
   s->window = window;
   return 1;
-}
-
-// Allocates the vertex buffer. Returns 0 on error.
-static int SetupVertexBuffer(ApplicationState *s) {
-  ObjectFileInfo *object = NULL;
-  char *obj_file_content = NULL;
-  obj_file_content = (char *) ReadFullFile("pyramid.obj");
-  if (!obj_file_content) return 0;
-  object = ParseObjFile(obj_file_content);
-  free(obj_file_content);
-  if (!object) {
-    printf("Failed parsing .obj file.\n");
-    return 0;
-  }
-
-  // Each row:
-  //  - First three values: position (x, y, z)
-  //  - Next three values: normal (x, y, z)
-  //  - Next two values: texture coordinate (u, v)
-
-  glGenVertexArrays(1, &(s->vertex_array_object));
-  glBindVertexArray(s->vertex_array_object);
-  glGenBuffers(1, &(s->element_buffer_object));
-  glGenBuffers(1, &(s->vertex_buffer_object));
-  // The element buffer object is associated with the VAO.
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->element_buffer_object);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, object->index_count * sizeof(GLuint),
-    object->indices, GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, s->vertex_buffer_object);
-  glBufferData(GL_ARRAY_BUFFER, object->vertex_count * 8 * sizeof(float),
-    object->vertices, GL_STATIC_DRAW);
-  s->elements_to_draw = object->index_count;
-
-  // We can free the object now that we've copied the data.
-  FreeObjectFileInfo(object);
-  object = NULL;
-
-  // Set up the positions, normals, and texture coordinate attributes:
-  //  - All have a stride of 8.
-  //  - Location = attribute 0
-  //  - Normal = attribute 1
-  //  - UV coordinate = attribute 2
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), 0);
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
-    (void *) (3 * sizeof(float)));
-  glEnableVertexAttribArray(1);
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
-    (void *) (6 * sizeof(float)));
-  glEnableVertexAttribArray(2);
-  return CheckGLErrors();
 }
 
 // Loads and compiles a shader from the given file path. Returns the GLuint
@@ -285,48 +136,6 @@ static int SetupShaderProgram(ApplicationState *s) {
   return CheckGLErrors();
 }
 
-// Loads a texture, returning the ID of the new OpenGL texture. Returns 0 on
-// error. If this returns nonzero, then the texture should be destroyed by the
-// caller.
-static GLuint LoadTexture(const char *filename) {
-  GLuint to_return = 0;
-  int width, height, channels;
-  unsigned char *image_data = stbi_load(filename, &width, &height, &channels,
-    4);
-  if (!image_data) {
-    printf("Failed loading image %s\n", filename);
-    return 0;
-  }
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-    GL_LINEAR_MIPMAP_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glGenTextures(1, &to_return);
-  glBindTexture(GL_TEXTURE_2D, to_return);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-    GL_UNSIGNED_BYTE, image_data);
-  glGenerateMipmap(GL_TEXTURE_2D);
-  stbi_image_free(image_data);
-  image_data = NULL;
-  if (!CheckGLErrors()) {
-    printf("Couldn't create texture from %s\n", filename);
-    glDeleteTextures(1, &to_return);
-    return 0;
-  }
-  return to_return;
-}
-
-// Loads any image texture(s) needed by the application. Returns 0 on error.
-static int LoadTextures(ApplicationState *s) {
-  stbi_set_flip_vertically_on_load(1);
-  s->box_texture = LoadTexture("container.jpg");
-  if (!s->box_texture) return 0;
-  s->face_texture = LoadTexture("awesomeface.png");
-  if (!s->face_texture) return 0;
-  return 1;
-}
-
 // Gets the view and projection matrices for the scene.
 static void GetViewAndProjection(ApplicationState *s, mat4 view,
     mat4 projection) {
@@ -347,7 +156,8 @@ static void GetModelTransform(ApplicationState *s, mat4 transform) {
   glm_vec3_zero(axis);
   glm_mat4_identity(transform);
   // Rotate over time around the x axis.
-  axis[0] = 1.0;
+  axis[0] = 0.5;
+  axis[1] = 1.0;
   glm_rotate(transform, -glfwGetTime(), axis);
 }
 
@@ -375,6 +185,7 @@ static int RunMainLoop(ApplicationState *s) {
   mat4 model_transform, view, projection;
   GLint box_tex_uniform, face_tex_uniform, model_uniform, view_uniform,
     projection_uniform;
+  int i = 0;
   if (!UniformIndex(s, "box_texture", &box_tex_uniform)) return 0;
   if (!UniformIndex(s, "face_texture", &face_tex_uniform)) return 0;
   if (!UniformIndex(s, "model_transform", &model_uniform)) return 0;
@@ -382,6 +193,10 @@ static int RunMainLoop(ApplicationState *s) {
   if (!UniformIndex(s, "projection_transform", &projection_uniform)) return 0;
   GetModelTransform(s, model_transform);
   GetViewAndProjection(s, view, projection);
+  if (s->mesh->texture_count != 2) {
+    printf("Internal error: we must have a mesh with 2 textures for now.\n");
+    return 0;
+  }
 
   glUseProgram(s->shader_program);
   // For now, we only need to set the view and projection uniforms once.
@@ -415,19 +230,26 @@ static int RunMainLoop(ApplicationState *s) {
     // TODO: Update the view and projection uniforms if needed, too.
 
     // Set the textures.
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, s->box_texture);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, s->face_texture);
+    for (i = 0; i < s->mesh->texture_count; i++) {
+      glActiveTexture(GL_TEXTURE0 + i);
+      glBindTexture(GL_TEXTURE_2D, s->mesh->textures[i]);
+    }
 
-    // Bind the vertex array, including the element array, and draw.
-    glBindVertexArray(s->vertex_array_object);
-    glDrawElements(GL_TRIANGLES, s->elements_to_draw, GL_UNSIGNED_INT, 0);
+    // Bind the vertex array and draw.
+    glBindVertexArray(s->mesh->vertex_array);
+    glDrawElements(GL_TRIANGLES, s->mesh->element_count, GL_UNSIGNED_INT, 0);
 
     glfwSwapBuffers(s->window);
     glfwPollEvents();
     if (!CheckGLErrors()) return 0;
   }
+  return 1;
+}
+
+// Loads the 3D model to render. Returns 0 on error.
+static int Setup3DModel(ApplicationState *s) {
+  s->mesh = LoadMesh("pyramid.obj", 2, "container.jpg", "awesomeface.png");
+  if (!s->mesh) return 0;
   return 1;
 }
 
@@ -455,17 +277,11 @@ int main(int argc, char **argv) {
   }
   glViewport(0, 0, s->window_width, s->window_height);
   glfwSetFramebufferSizeCallback(s->window, FramebufferResizedCallback);
-  if (!SetupVertexBuffer(s)) {
-    printf("Failed setting up vertex buffer.\n");
-    to_return = 1;
-    goto cleanup;
-  }
   if (!SetupShaderProgram(s)) {
     to_return = 1;
     goto cleanup;
   }
-  if (!LoadTextures(s)) {
-    printf("Failed loading textures.\n");
+  if (!Setup3DModel(s)) {
     to_return = 1;
     goto cleanup;
   }

@@ -5,19 +5,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include <stdint.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include "model.h"
 
 typedef struct {
   GLFWwindow *window;
-  GLuint vertex_array_object;
-  GLuint vertex_buffer_object;
-  GLuint element_buffer_object;
   GLuint shader_program;
-  GLuint box_texture;
-  GLuint face_texture;
-  GLuint elements_to_draw;
+  Mesh *mesh;
   int window_width;
   int window_height;
   float aspect_ratio;
@@ -30,15 +25,6 @@ ApplicationState* AllocateApplicationState(void);
 
 // Cleans up and frees the given ApplicationState struct.
 void FreeApplicationState(ApplicationState *s);
-
-// Checks OpenGL errors. Prints a message and returns 0 if one was detected.
-// Otherwise returns 1.
-int CheckGLErrors(void);
-
-// Reads the file with the entire given name to a NULL-terminated buffer of
-// bytes. Returns NULL on error. The caller is responsible for freeing the
-// returned buffer when it's no longer needed.
-uint8_t* ReadFullFile(const char *path);
 
 #ifdef __cplusplus
 }  // extern "C"
