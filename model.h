@@ -16,6 +16,7 @@ typedef struct {
   // Used for rendering the object.
   GLuint vertex_array;
   GLuint vertex_buffer;
+  GLuint instanced_vertex_buffer;
   GLuint element_buffer;
   GLuint element_count;
 } Mesh;

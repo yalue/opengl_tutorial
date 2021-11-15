@@ -1,6 +1,7 @@
 // This defines the main executable implementing the OpenGL tutorial from
 // learnopengl.com.
 #include <errno.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +15,9 @@
 #include "parse_obj.h"
 #include "utilities.h"
 #include "opengl_tutorial.h"
+
+// The number of instances of the model to render.
+#define MODEL_INSTANCES (400)
 
 // The default window width and height
 #define DEFAULT_WINDOW_WIDTH (800)
@@ -35,6 +39,7 @@ void FreeApplicationState(ApplicationState *s) {
   if (s->window) glfwDestroyWindow(s->window);
   glDeleteProgram(s->shader_program);
   DestroyMesh(s->mesh);
+  free(s->transforms);
   memset(s, 0, sizeof(*s));
   free(s);
 }
@@ -150,15 +155,38 @@ static void GetViewAndProjection(ApplicationState *s, mat4 view,
   glm_perspective(45.0, s->aspect_ratio, 0.01, 100.0, projection);
 }
 
-// Sets the given matrix to the model's transform matrix.
-static void GetModelTransform(ApplicationState *s, mat4 transform) {
-  vec3 axis;
-  glm_vec3_zero(axis);
-  glm_mat4_identity(transform);
-  // Rotate over time around the x axis.
-  axis[0] = 0.5;
-  axis[1] = 1.0;
-  glm_rotate(transform, -glfwGetTime(), axis);
+// Updates the view matrix.
+static void UpdateView(ApplicationState *s, mat4 view) {
+  vec3 position, target, up;
+  float tmp;
+  glm_mat4_identity(view);
+  glm_vec3_zero(position);
+  glm_vec3_zero(target);
+  glm_vec3_zero(up);
+  up[1] = 1.0;
+  tmp = glfwGetTime() / 2.0;
+  position[0] = sin(tmp) * 10.0;
+  position[2] = cos(tmp) * 10.0;
+  glm_lookat(position, target, up, view);
+}
+
+// Updates the mesh_transforms matrices.
+static void UpdateModelTransforms(ApplicationState *s) {
+  int i;
+  MeshTransformConfiguration *t = NULL;
+  float angle;
+  for (i = 0; i < s->instance_count; i++) {
+    t = s->transforms + i;
+    glm_mat4_identity(s->transform_matrices[i]);
+    glm_translate(s->transform_matrices[i], t->position);
+    angle = t->start_angle - (glfwGetTime() * t->rotation_speed);
+    glm_rotate(s->transform_matrices[i], angle, t->axis);
+  }
+  // Copy the new data to the instanced vertex buffer.
+  glBindBuffer(GL_ARRAY_BUFFER, s->mesh->instanced_vertex_buffer);
+  glBufferData(GL_ARRAY_BUFFER, s->instance_count * sizeof(mat4),
+    s->transform_matrices, GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 // Processes window inputs. Returns 0 on error.
@@ -182,16 +210,13 @@ static int UniformIndex(ApplicationState *s, const char *name, GLint *index) {
 
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
-  mat4 model_transform, view, projection;
-  GLint box_tex_uniform, face_tex_uniform, model_uniform, view_uniform,
-    projection_uniform;
+  mat4 view, projection;
+  GLint box_tex_uniform, face_tex_uniform, view_uniform, projection_uniform;
   int i = 0;
   if (!UniformIndex(s, "box_texture", &box_tex_uniform)) return 0;
   if (!UniformIndex(s, "face_texture", &face_tex_uniform)) return 0;
-  if (!UniformIndex(s, "model_transform", &model_uniform)) return 0;
   if (!UniformIndex(s, "view_transform", &view_uniform)) return 0;
   if (!UniformIndex(s, "projection_transform", &projection_uniform)) return 0;
-  GetModelTransform(s, model_transform);
   GetViewAndProjection(s, view, projection);
   if (s->mesh->texture_count != 2) {
     printf("Internal error: we must have a mesh with 2 textures for now.\n");
@@ -211,6 +236,8 @@ static int RunMainLoop(ApplicationState *s) {
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   glEnable(GL_DEPTH_TEST);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
 
   while (!glfwWindowShouldClose(s->window)) {
     if (!ProcessInputs(s->window)) {
@@ -223,21 +250,22 @@ static int RunMainLoop(ApplicationState *s) {
 
     // Start using the shader program
     glUseProgram(s->shader_program);
+    // Update the model transforms
+    UpdateModelTransforms(s);
 
-    // Update the model transform
-    GetModelTransform(s, model_transform);
-    glUniformMatrix4fv(model_uniform, 1, GL_FALSE, (float *) model_transform);
-    // TODO: Update the view and projection uniforms if needed, too.
+    // Update the camera position
+    UpdateView(s, view);
+    glUniformMatrix4fv(view_uniform, 1, GL_FALSE, (float *) view);
 
-    // Set the textures.
+    // Render the model instances.
     for (i = 0; i < s->mesh->texture_count; i++) {
       glActiveTexture(GL_TEXTURE0 + i);
       glBindTexture(GL_TEXTURE_2D, s->mesh->textures[i]);
     }
-
-    // Bind the vertex array and draw.
+    glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(s->mesh->vertex_array);
-    glDrawElements(GL_TRIANGLES, s->mesh->element_count, GL_UNSIGNED_INT, 0);
+    glDrawElementsInstanced(GL_TRIANGLES, s->mesh->element_count,
+      GL_UNSIGNED_INT, 0, s->instance_count);
 
     glfwSwapBuffers(s->window);
     glfwPollEvents();
@@ -246,10 +274,44 @@ static int RunMainLoop(ApplicationState *s) {
   return 1;
 }
 
-// Loads the 3D model to render. Returns 0 on error.
-static int Setup3DModel(ApplicationState *s) {
+static float RandomFloat(void) {
+  return ((float) rand()) / ((float) RAND_MAX);
+}
+
+// Loads the 3D model to render. Returns 0 on error. Also determines the mesh
+// positions.
+static int Setup3DModels(ApplicationState *s) {
+  int i;
+  MeshTransformConfiguration *t = NULL;
   s->mesh = LoadMesh("pyramid.obj", 2, "container.jpg", "awesomeface.png");
   if (!s->mesh) return 0;
+  s->instance_count = MODEL_INSTANCES;
+  s->transforms = (MeshTransformConfiguration *) calloc(s->instance_count,
+    sizeof(MeshTransformConfiguration));
+  if (!s->transforms) {
+    printf("Failed allocating memory for mesh positions.\n");
+    return 0;
+  }
+  s->transform_matrices = (mat4 *) calloc(s->instance_count, sizeof(mat4));
+  if (!s->transform_matrices) {
+    printf("Failed allocating memory for model transform matrices.\n");
+    return 0;
+  }
+  for (i = 0; i < s->instance_count; i++) {
+    t = s->transforms + i;
+    // x position: -8 to +8
+    t->position[0] = RandomFloat() * 16.0 - 8.0;
+    // y position: -4 to +4
+    t->position[1] = RandomFloat() * 8.0 - 4.0;
+    // z position: -4 to +4
+    t->position[2] = RandomFloat() * 8.0 - 4.0;
+    // Rotate about a random axis
+    t->axis[0] = RandomFloat() * 2.0 - 1.0;
+    t->axis[1] = RandomFloat() * 2.0 - 1.0;
+    t->axis[2] = RandomFloat() * 2.0 - 1.0;
+    t->start_angle = RandomFloat() * 2.0 * 3.1415926535;
+    t->rotation_speed = RandomFloat() * 3.0;
+  }
   return 1;
 }
 
@@ -281,7 +343,7 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
-  if (!Setup3DModel(s)) {
+  if (!Setup3DModels(s)) {
     to_return = 1;
     goto cleanup;
   }

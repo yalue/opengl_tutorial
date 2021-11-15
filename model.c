@@ -51,7 +51,7 @@ Mesh* LoadMesh(const char *object_file_path, int texture_count, ...) {
   va_list args;
   ObjectFileInfo *object = NULL;
   GLuint *textures = NULL;
-  GLuint vao = 0, vbo = 0, ebo = 0;
+  GLuint vao = 0, vbo = 0, ebo = 0, instanced_vbo = 0;
   const char *image_path = NULL;
   char *object_file_content = NULL;
   int i = 0;
@@ -94,6 +94,9 @@ Mesh* LoadMesh(const char *object_file_path, int texture_count, ...) {
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
   glBufferData(GL_ARRAY_BUFFER, object->vertex_count *
     sizeof(ObjectFileVertex), object->vertices, GL_STATIC_DRAW);
+  // Set up the instanced transform buffer.
+  glGenBuffers(1, &instanced_vbo);
+
   if (!CheckGLErrors()) {
     printf("Failed setting up element and vertex buffers.\n");
     goto error_cleanup;
@@ -105,6 +108,7 @@ Mesh* LoadMesh(const char *object_file_path, int texture_count, ...) {
   }
 
   // Set up the position, normal, and texture coordinate attributes.
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(ObjectFileVertex),
     (void *) offsetof(ObjectFileVertex, location));
   glEnableVertexAttribArray(0);
@@ -119,10 +123,25 @@ Mesh* LoadMesh(const char *object_file_path, int texture_count, ...) {
     goto error_cleanup;
   }
 
+  // Set up the instanced vertex buffer. A mat4 uses four attribute locations.
+  glBindBuffer(GL_ARRAY_BUFFER, instanced_vbo);
+  for (i = 0; i < 4; i++) {
+    glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, 16 * sizeof(float),
+      (void *) (i * 4 * sizeof(float)));
+    glEnableVertexAttribArray(3 + i);
+    glVertexAttribDivisor(3 + i, 1);
+  }
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  if (!CheckGLErrors()) {
+    printf("Error setting up instanced vertex buffer.\n");
+    goto error_cleanup;
+  }
+
   to_return->textures = textures;
   to_return->texture_count = texture_count;
   to_return->vertex_array = vao;
   to_return->vertex_buffer = vbo;
+  to_return->instanced_vertex_buffer = instanced_vbo;
   to_return->element_buffer = ebo;
   to_return->element_count = object->index_count;
   FreeObjectFileInfo(object);
@@ -132,6 +151,7 @@ error_cleanup:
   glDeleteVertexArrays(1, &vao);
   glDeleteBuffers(1, &ebo);
   glDeleteBuffers(1, &vbo);
+  glDeleteBuffers(1, &instanced_vbo);
   free(to_return);
   if (textures) {
     glDeleteTextures(texture_count, textures);
@@ -147,6 +167,7 @@ void DestroyMesh(Mesh *mesh) {
   free(mesh->textures);
   glDeleteBuffers(1, &(mesh->element_buffer));
   glDeleteBuffers(1, &(mesh->vertex_buffer));
+  glDeleteBuffers(1, &(mesh->instanced_vertex_buffer));
   glDeleteVertexArrays(1, &(mesh->vertex_array));
   memset(mesh, 0, sizeof(*mesh));
   free(mesh);
