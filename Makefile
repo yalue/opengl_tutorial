@@ -16,14 +16,17 @@ parse_obj.o: parse_obj.c parse_obj.h
 model.o: model.c model.h
 	gcc $(CFLAGS) -c -o model.o model.c -I glad/include
 
+shader_program.o: shader_program.c shader_program.h
+	gcc $(CFLAGS) -c -o shader_program.o shader_program.c -I glad/include
+
 utilities.o: utilities.c utilities.h
 	gcc $(CFLAGS) -c -o utilities.o utilities.c -I glad/include
 
 opengl_tutorial: opengl_tutorial.c opengl_tutorial.h parse_obj.o \
-	scapegoat_tree.o model.o utilities.o
+	scapegoat_tree.o model.o shader_program.o utilities.o
 	gcc $(CFLAGS) -o opengl_tutorial opengl_tutorial.c \
 		glad/src/glad.c parse_obj.o scapegoat_tree.o utilities.o model.o \
-		-I glad/include -I cglm/include $(GLFW_CFLAGS)
+		shader_program.o -I glad/include -I cglm/include $(GLFW_CFLAGS)
 
 clean:
 	rm -f *.o

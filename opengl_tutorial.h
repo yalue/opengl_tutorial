@@ -25,7 +25,6 @@ typedef struct {
 // Overall application state.
 typedef struct {
   GLFWwindow *window;
-  GLuint shader_program;
   Mesh *mesh;
   // The number of times to draw the mesh.
   int instance_count;

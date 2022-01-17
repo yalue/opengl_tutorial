@@ -3,11 +3,11 @@
 in vec2 texture_coord;
 out vec4 frag_color;
 
-uniform sampler2D box_texture;
-uniform sampler2D face_texture;
+uniform sampler2D texture0;
+uniform sampler2D texture1;
 
 void main() {
-  frag_color = mix(texture(box_texture, texture_coord), texture(face_texture,
+  frag_color = mix(texture(texture0, texture_coord), texture(texture1,
     texture_coord), 0.2);
 }
 

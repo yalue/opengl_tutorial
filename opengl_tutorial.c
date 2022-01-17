@@ -37,7 +37,6 @@ ApplicationState* AllocateApplicationState(void) {
 void FreeApplicationState(ApplicationState *s) {
   if (!s) return;
   if (s->window) glfwDestroyWindow(s->window);
-  glDeleteProgram(s->shader_program);
   DestroyMesh(s->mesh);
   free(s->transforms);
   memset(s, 0, sizeof(*s));
@@ -70,75 +69,6 @@ static int SetupWindow(ApplicationState *s) {
   glfwMakeContextCurrent(window);
   s->window = window;
   return 1;
-}
-
-// Loads and compiles a shader from the given file path. Returns the GLuint
-// handle to the shader. Returns 0 on error.
-static GLuint LoadShader(const char *path, GLenum shader_type) {
-  GLuint to_return = 0;
-  GLint compile_result = 0;
-  GLchar shader_log[512];
-  uint8_t *shader_src = ReadFullFile(path);
-  if (!shader_src) return 0;
-  to_return = glCreateShader(shader_type);
-  glShaderSource(to_return, 1, (const char **) &shader_src, NULL);
-  glCompileShader(to_return);
-  free(shader_src);
-  shader_src = NULL;
-
-  // Check compilation success.
-  memset(shader_log, 0, sizeof(shader_log));
-  glGetShaderiv(to_return, GL_COMPILE_STATUS, &compile_result);
-  if (compile_result != GL_TRUE) {
-    glGetShaderInfoLog(to_return, sizeof(shader_log) - 1, NULL,
-      shader_log);
-    printf("Shader %s compile error:\n%s\n", path, shader_log);
-    glDeleteShader(to_return);
-    return 0;
-  }
-  if (!CheckGLErrors()) {
-    glDeleteShader(to_return);
-    return 0;
-  }
-  return to_return;
-}
-
-// Links the OpenGL shaders. Returns 0 on error.
-static int SetupShaderProgram(ApplicationState *s) {
-  GLint link_result = 0;
-  GLchar link_log[512];
-  GLuint vertex_shader, fragment_shader;
-  vertex_shader = LoadShader("./shader.vert", GL_VERTEX_SHADER);
-  if (!vertex_shader) {
-    printf("Couldn't load vertex shader.\n");
-    return 0;
-  }
-  fragment_shader = LoadShader("./shader.frag", GL_FRAGMENT_SHADER);
-  if (!fragment_shader) {
-    printf("Couldn't load fragment shader.\n");
-    return 0;
-  }
-
-  s->shader_program = glCreateProgram();
-  glAttachShader(s->shader_program, vertex_shader);
-  glAttachShader(s->shader_program, fragment_shader);
-  glLinkProgram(s->shader_program);
-
-  // The loaded shaders aren't needed after linking.
-  glDeleteShader(vertex_shader);
-  glDeleteShader(fragment_shader);
-
-  // Check link result
-  memset(link_log, 0, sizeof(link_log));
-  glGetProgramiv(s->shader_program, GL_LINK_STATUS, &link_result);
-  if (link_result != GL_TRUE) {
-    glGetProgramInfoLog(s->shader_program, sizeof(link_log) - 1, NULL,
-      link_log);
-    printf("GL program link error:\n%s\n", link_log);
-    return 0;
-  }
-  glUseProgram(s->shader_program);
-  return CheckGLErrors();
 }
 
 // Gets the view and projection matrices for the scene.
@@ -197,41 +127,26 @@ static int ProcessInputs(GLFWwindow *window) {
   return 1;
 }
 
-// Sets *index to the index of the named uniform in s->shader_program. Returns
-// 0 and prints a message on error.
-static int UniformIndex(ApplicationState *s, const char *name, GLint *index) {
-  *index = glGetUniformLocation(s->shader_program, name);
-  if (*index < 0) {
-    printf("Failed getting location of uniform %s.\n", name);
-    return 0;
-  }
-  return 1;
-}
-
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
   mat4 view, projection;
-  GLint box_tex_uniform, face_tex_uniform, view_uniform, projection_uniform;
+  GLuint view_uniform;
   int i = 0;
-  if (!UniformIndex(s, "box_texture", &box_tex_uniform)) return 0;
-  if (!UniformIndex(s, "face_texture", &face_tex_uniform)) return 0;
-  if (!UniformIndex(s, "view_transform", &view_uniform)) return 0;
-  if (!UniformIndex(s, "projection_transform", &projection_uniform)) return 0;
   GetViewAndProjection(s, view, projection);
-  if (s->mesh->texture_count != 2) {
-    printf("Internal error: we must have a mesh with 2 textures for now.\n");
-    return 0;
-  }
 
-  glUseProgram(s->shader_program);
-  // For now, we only need to set the view and projection uniforms once.
+  glUseProgram(s->mesh->shader_program->shader_program);
+  view_uniform = s->mesh->shader_program->view_uniform;
+  // For now, we only need to set the projection uniform once.
   glUniformMatrix4fv(view_uniform, 1, GL_FALSE, (float *) view);
-  glUniformMatrix4fv(projection_uniform, 1, GL_FALSE, (float *) projection);
+  glUniformMatrix4fv(s->mesh->shader_program->projection_uniform, 1, GL_FALSE,
+    (float *) projection);
 
-  // We will put the box and face textures in GL_TEXTURE0 and GL_TEXTURE1,
-  // respectively.
-  glUniform1i(box_tex_uniform, 0);
-  glUniform1i(face_tex_uniform, 1);
+  // Put the textures in their respective slots.
+  for (i = 0; i < s->mesh->texture_count; i++) {
+    glUniform1i(s->mesh->shader_program->texture_uniform_indices[i], i);
+    glActiveTexture(GL_TEXTURE0 + i);
+    glBindTexture(GL_TEXTURE_2D, s->mesh->textures[i]);
+  }
 
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -248,8 +163,6 @@ static int RunMainLoop(ApplicationState *s) {
     glClearColor(0.3f, 0.05f, 0.5f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Start using the shader program
-    glUseProgram(s->shader_program);
     // Update the model transforms
     UpdateModelTransforms(s);
 
@@ -257,11 +170,6 @@ static int RunMainLoop(ApplicationState *s) {
     UpdateView(s, view);
     glUniformMatrix4fv(view_uniform, 1, GL_FALSE, (float *) view);
 
-    // Render the model instances.
-    for (i = 0; i < s->mesh->texture_count; i++) {
-      glActiveTexture(GL_TEXTURE0 + i);
-      glBindTexture(GL_TEXTURE_2D, s->mesh->textures[i]);
-    }
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(s->mesh->vertex_array);
     glDrawElementsInstanced(GL_TRIANGLES, s->mesh->element_count,
@@ -285,6 +193,7 @@ static int Setup3DModels(ApplicationState *s) {
   MeshTransformConfiguration *t = NULL;
   s->mesh = LoadMesh("cube.obj", 2, "container.jpg", "awesomeface.png");
   if (!s->mesh) return 0;
+  if (!SetShaderProgram(s->mesh, "shader.vert", "shader.frag")) return 0;
   s->instance_count = MODEL_INSTANCES;
   s->transforms = (MeshTransformConfiguration *) calloc(s->instance_count,
     sizeof(MeshTransformConfiguration));
@@ -339,15 +248,10 @@ int main(int argc, char **argv) {
   }
   glViewport(0, 0, s->window_width, s->window_height);
   glfwSetFramebufferSizeCallback(s->window, FramebufferResizedCallback);
-  if (!SetupShaderProgram(s)) {
-    to_return = 1;
-    goto cleanup;
-  }
   if (!Setup3DModels(s)) {
     to_return = 1;
     goto cleanup;
   }
-  // TODO (next): Continue with https://learnopengl.com/Getting-started/Coordinate-Systems
   if (!CheckGLErrors()) {
     printf("OpenGL errors detected during initialization.\n");
     to_return = 1;

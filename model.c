@@ -11,9 +11,24 @@
 #define STBI_NO_PIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "shader_program.h"
 #include "utilities.h"
 
 #include "model.h"
+
+int SetShaderProgram(Mesh *m, const char *vert_src, const char *frag_src) {
+  if (m->shader_program) {
+    printf("The mesh already had a shader program. This one must be destroyed "
+      "before setting a new one.\n");
+    return 0;
+  }
+  m->shader_program = SetupShaderProgram(vert_src, frag_src, m->texture_count);
+  if (!m->shader_program) {
+    printf("Failed loading shader program.\n");
+    return 0;
+  }
+  return 1;
+}
 
 // Loads a texture, returning the ID of the new OpenGL texture. Returns 0 on
 // error. If this returns nonzero, then the texture should be destroyed by the
