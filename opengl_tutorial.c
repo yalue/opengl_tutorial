@@ -17,7 +17,7 @@
 #include "opengl_tutorial.h"
 
 // The number of instances of the model to render.
-#define MODEL_INSTANCES (400)
+#define MODEL_INSTANCES (100)
 
 // The default window width and height
 #define DEFAULT_WINDOW_WIDTH (800)
@@ -283,7 +283,7 @@ static float RandomFloat(void) {
 static int Setup3DModels(ApplicationState *s) {
   int i;
   MeshTransformConfiguration *t = NULL;
-  s->mesh = LoadMesh("pyramid.obj", 2, "container.jpg", "awesomeface.png");
+  s->mesh = LoadMesh("cube.obj", 2, "container.jpg", "awesomeface.png");
   if (!s->mesh) return 0;
   s->instance_count = MODEL_INSTANCES;
   s->transforms = (MeshTransformConfiguration *) calloc(s->instance_count,
