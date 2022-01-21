@@ -187,3 +187,33 @@ void DestroyMesh(Mesh *mesh) {
   memset(mesh, 0, sizeof(*mesh));
   free(mesh);
 }
+
+int SetInstanceTransforms(Mesh *m, int instance_count, float *data) {
+  m->instance_count = instance_count;
+  glBindBuffer(GL_ARRAY_BUFFER, m->instanced_vertex_buffer);
+  glBufferData(GL_ARRAY_BUFFER, instance_count * 16 * sizeof(float), data,
+    GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  return CheckGLErrors();
+}
+
+int DrawMesh(Mesh *m, float *view, float *projection) {
+  int i = 0;
+  GLuint view_uniform = m->shader_program->view_uniform;
+  GLuint projection_uniform = m->shader_program->projection_uniform;
+  glUseProgram(m->shader_program->shader_program);
+  glUniformMatrix4fv(view_uniform, 1, GL_FALSE, view);
+  glUniformMatrix4fv(projection_uniform, 1, GL_FALSE, projection);
+  // Set up the textures.
+  for (i = 0; i < m->texture_count; i++) {
+    glUniform1i(m->shader_program->texture_uniform_indices[i], i);
+    glActiveTexture(GL_TEXTURE0 + i);
+    glBindTexture(GL_TEXTURE_2D, m->textures[i]);
+  }
+  glActiveTexture(GL_TEXTURE0);
+  glBindVertexArray(m->vertex_array);
+  glDrawElementsInstanced(GL_TRIANGLES, m->element_count, GL_UNSIGNED_INT, 0,
+    m->instance_count);
+  return CheckGLErrors();
+}
+

@@ -26,6 +26,7 @@ typedef struct {
 typedef struct {
   GLFWwindow *window;
   Mesh *mesh;
+  Mesh *floor;
   // The number of times to draw the mesh.
   int instance_count;
   // Used to determine the position, rotation, etc, of each instance.

@@ -38,6 +38,7 @@ void FreeApplicationState(ApplicationState *s) {
   if (!s) return;
   if (s->window) glfwDestroyWindow(s->window);
   DestroyMesh(s->mesh);
+  DestroyMesh(s->floor);
   free(s->transforms);
   memset(s, 0, sizeof(*s));
   free(s);
@@ -113,10 +114,8 @@ static void UpdateModelTransforms(ApplicationState *s) {
     glm_rotate(s->transform_matrices[i], angle, t->axis);
   }
   // Copy the new data to the instanced vertex buffer.
-  glBindBuffer(GL_ARRAY_BUFFER, s->mesh->instanced_vertex_buffer);
-  glBufferData(GL_ARRAY_BUFFER, s->instance_count * sizeof(mat4),
-    s->transform_matrices, GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  SetInstanceTransforms(s->mesh, s->instance_count,
+    (float *) s->transform_matrices);
 }
 
 // Processes window inputs. Returns 0 on error.
@@ -130,29 +129,13 @@ static int ProcessInputs(GLFWwindow *window) {
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
   mat4 view, projection;
-  GLuint view_uniform;
-  int i = 0;
   GetViewAndProjection(s, view, projection);
-
-  glUseProgram(s->mesh->shader_program->shader_program);
-  view_uniform = s->mesh->shader_program->view_uniform;
-  // For now, we only need to set the projection uniform once.
-  glUniformMatrix4fv(view_uniform, 1, GL_FALSE, (float *) view);
-  glUniformMatrix4fv(s->mesh->shader_program->projection_uniform, 1, GL_FALSE,
-    (float *) projection);
-
-  // Put the textures in their respective slots.
-  for (i = 0; i < s->mesh->texture_count; i++) {
-    glUniform1i(s->mesh->shader_program->texture_uniform_indices[i], i);
-    glActiveTexture(GL_TEXTURE0 + i);
-    glBindTexture(GL_TEXTURE_2D, s->mesh->textures[i]);
-  }
 
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   glEnable(GL_DEPTH_TEST);
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
+  //glEnable(GL_CULL_FACE);
+  //glCullFace(GL_BACK);
 
   while (!glfwWindowShouldClose(s->window)) {
     if (!ProcessInputs(s->window)) {
@@ -168,13 +151,10 @@ static int RunMainLoop(ApplicationState *s) {
 
     // Update the camera position
     UpdateView(s, view);
-    glUniformMatrix4fv(view_uniform, 1, GL_FALSE, (float *) view);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(s->mesh->vertex_array);
-    glDrawElementsInstanced(GL_TRIANGLES, s->mesh->element_count,
-      GL_UNSIGNED_INT, 0, s->instance_count);
-
+    // TODO (next): Why isn't the floor showing up?
+    if (!DrawMesh(s->floor, (float *) view, (float *) projection)) return 0;
+    if (!DrawMesh(s->mesh, (float *) view, (float *) projection)) return 0;
     glfwSwapBuffers(s->window);
     glfwPollEvents();
     if (!CheckGLErrors()) return 0;
@@ -186,14 +166,40 @@ static float RandomFloat(void) {
   return ((float) rand()) / ((float) RAND_MAX);
 }
 
-// Loads the 3D model to render. Returns 0 on error. Also determines the mesh
-// positions.
-static int Setup3DModels(ApplicationState *s) {
+// Loads and initializes the floor plane mesh. Returns 0 on error.
+static int SetupFloorPlane(ApplicationState *s) {
+  mat4 floor_transform;
+  s->floor = LoadMesh("plane.obj", 1, "floor_texture.png");
+  if (!s->floor) {
+    printf("Failed loading floor plane mesh.\n");
+    return 0;
+  }
+  if (!SetShaderProgram(s->floor, "basic_vertices.vert",
+    "single_texture_shader.frag")) {
+    printf("Failed loading floor shaders.\n");
+    return 0;
+  }
+  glm_mat4_identity(floor_transform);
+  glm_translate_y(floor_transform, -5.0);
+  glm_scale_uni(floor_transform, 20.0);
+  if (!SetInstanceTransforms(s->floor, 1, (float *) floor_transform)) {
+    printf("Failed setting floor size and position.\n");
+    return 0;
+  }
+  return 1;
+}
+
+// Sets up the box meshes, including randomizing their positions, rotations,
+// etc. Returns 0 on error.
+static int SetupBoxMeshes(ApplicationState *s) {
   int i;
   MeshTransformConfiguration *t = NULL;
   s->mesh = LoadMesh("cube.obj", 2, "container.jpg", "awesomeface.png");
   if (!s->mesh) return 0;
-  if (!SetShaderProgram(s->mesh, "shader.vert", "shader.frag")) return 0;
+  if (!SetShaderProgram(s->mesh, "basic_vertices.vert",
+    "two_texture_shader.frag")) {
+    return 0;
+  }
   s->instance_count = MODEL_INSTANCES;
   s->transforms = (MeshTransformConfiguration *) calloc(s->instance_count,
     sizeof(MeshTransformConfiguration));
@@ -221,6 +227,13 @@ static int Setup3DModels(ApplicationState *s) {
     t->start_angle = RandomFloat() * 2.0 * 3.1415926535;
     t->rotation_speed = RandomFloat() * 3.0;
   }
+  return 1;
+}
+
+// Loads the 3D models to render. Returns 0 on error.
+static int Setup3DModels(ApplicationState *s) {
+  if (!SetupFloorPlane(s)) return 0;
+  if (!SetupBoxMeshes(s)) return 0;
   return 1;
 }
 

@@ -22,6 +22,8 @@ typedef struct {
   GLuint instanced_vertex_buffer;
   GLuint element_buffer;
   GLuint element_count;
+  // The number of instances of this to draw.
+  int instance_count;
 } Mesh;
 
 // Creates a mesh from the given object file. Also takes the number of textures
@@ -30,11 +32,20 @@ typedef struct {
 // needed.
 Mesh* LoadMesh(const char *object_file_path, int texture_count, ...);
 
+// Sets the instance_count field of m, and updates the instanced VBO. Requires
+// an array of 4x4 float matrices; one per instance. Returns 0 on error.
+int SetInstanceTransforms(Mesh *m, int instance_count, float *data);
+
 // Sets up the shader program used by this mesh. Requires paths to the vertex
 // and fragment shader sources. See shader_program.h for some notes about this;
 // some uniforms are expected to follow certain naming conventions. This
 // function returns 0 on error.
 int SetShaderProgram(Mesh *m, const char *vert_src, const char *frag_src);
+
+// Draws the mesh. Returns 0 on error, including if any GL errors occurs, or if
+// SetInstanceTransforms hasn't been called to create some instances of the
+// mesh. Requires pointers to the 4x4 view and projection matrices.
+int DrawMesh(Mesh *m, float *view, float *projection);
 
 // Frees any resources associated with the mesh, along with the mesh struct
 // itself. The mesh pointer is invalid after passing it to this.
