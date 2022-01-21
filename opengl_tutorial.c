@@ -134,8 +134,8 @@ static int RunMainLoop(ApplicationState *s) {
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   glEnable(GL_DEPTH_TEST);
-  //glEnable(GL_CULL_FACE);
-  //glCullFace(GL_BACK);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
 
   while (!glfwWindowShouldClose(s->window)) {
     if (!ProcessInputs(s->window)) {
@@ -152,7 +152,6 @@ static int RunMainLoop(ApplicationState *s) {
     // Update the camera position
     UpdateView(s, view);
 
-    // TODO (next): Why isn't the floor showing up?
     if (!DrawMesh(s->floor, (float *) view, (float *) projection)) return 0;
     if (!DrawMesh(s->mesh, (float *) view, (float *) projection)) return 0;
     glfwSwapBuffers(s->window);
@@ -179,8 +178,11 @@ static int SetupFloorPlane(ApplicationState *s) {
     printf("Failed loading floor shaders.\n");
     return 0;
   }
+
   glm_mat4_identity(floor_transform);
   glm_translate_y(floor_transform, -5.0);
+  // Flip the plane to face upwards.
+  glm_rotate_x(floor_transform, 3.1415926536, floor_transform);
   glm_scale_uni(floor_transform, 20.0);
   if (!SetInstanceTransforms(s->floor, 1, (float *) floor_transform)) {
     printf("Failed setting floor size and position.\n");
