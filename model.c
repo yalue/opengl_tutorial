@@ -138,13 +138,25 @@ Mesh* LoadMesh(const char *object_file_path, int texture_count, ...) {
     goto error_cleanup;
   }
 
-  // Set up the instanced vertex buffer. A mat4 uses four attribute locations.
+  // Set up the instanced vertex buffer.
   glBindBuffer(GL_ARRAY_BUFFER, instanced_vbo);
+  // First, a mat4 using four attribute locations (for the model matrix)
   for (i = 0; i < 4; i++) {
-    glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, 16 * sizeof(float),
-      (void *) (i * 4 * sizeof(float)));
+    // Note that the stride needs to skip an entire ModelAndNormal. This
+    // assumes that each row in the mat4 is exactly 4 * sizeof(float).
+    glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, sizeof(ModelAndNormal),
+      (void *) (i * 4 * sizeof(float) + offsetof(ModelAndNormal, model)));
     glEnableVertexAttribArray(3 + i);
     glVertexAttribDivisor(3 + i, 1);
+  }
+  // Next, a mat3 using three locations (for the normal matrix)
+  for (i = 0; i < 3; i++) {
+    // Like for the model matrices. Assumes that each row in the mat3 is
+    // exactly 3 * sizeof(float).
+    glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, sizeof(ModelAndNormal),
+      (void *) (i * 3 * sizeof(float) + offsetof(ModelAndNormal, normal)));
+    glEnableVertexAttribArray(7 + i);
+    glVertexAttribDivisor(7 + i, 1);
   }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   if (!CheckGLErrors()) {
@@ -188,10 +200,10 @@ void DestroyMesh(Mesh *mesh) {
   free(mesh);
 }
 
-int SetInstanceTransforms(Mesh *m, int instance_count, float *data) {
+int SetInstanceTransforms(Mesh *m, int instance_count, ModelAndNormal *data) {
   m->instance_count = instance_count;
   glBindBuffer(GL_ARRAY_BUFFER, m->instanced_vertex_buffer);
-  glBufferData(GL_ARRAY_BUFFER, instance_count * 16 * sizeof(float), data,
+  glBufferData(GL_ARRAY_BUFFER, instance_count * sizeof(ModelAndNormal), data,
     GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   return CheckGLErrors();

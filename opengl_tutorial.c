@@ -39,7 +39,9 @@ void FreeApplicationState(ApplicationState *s) {
   if (s->window) glfwDestroyWindow(s->window);
   DestroyMesh(s->mesh);
   DestroyMesh(s->floor);
+  DestroyMesh(s->lamp.mesh);
   free(s->transforms);
+  free(s->transform_matrices);
   memset(s, 0, sizeof(*s));
   free(s);
 }
@@ -101,21 +103,32 @@ static void UpdateView(ApplicationState *s, mat4 view) {
   glm_lookat(position, target, up, view);
 }
 
+// Sets the contents of the normal mat3 to the correct normal matrix for the
+// given model matrix.
+static void ModelToNormalMatrix(mat4 model, mat3 normal) {
+  mat4 dst;
+  glm_mat4_inv(model, dst);
+  glm_mat4_transpose(dst);
+  glm_mat4_pick3(dst, normal);
+}
+
 // Updates the mesh_transforms matrices.
 static void UpdateModelTransforms(ApplicationState *s) {
   int i;
   MeshTransformConfiguration *t = NULL;
+  ModelAndNormal *m = NULL;
   float angle;
   for (i = 0; i < s->instance_count; i++) {
     t = s->transforms + i;
-    glm_mat4_identity(s->transform_matrices[i]);
-    glm_translate(s->transform_matrices[i], t->position);
+    m = s->transform_matrices + i;
+    glm_mat4_identity(m->model);
+    glm_translate(m->model, t->position);
     angle = t->start_angle - (glfwGetTime() * t->rotation_speed);
-    glm_rotate(s->transform_matrices[i], angle, t->axis);
+    glm_rotate(m->model, angle, t->axis);
+    ModelToNormalMatrix(m->model, m->normal);
   }
   // Copy the new data to the instanced vertex buffer.
-  SetInstanceTransforms(s->mesh, s->instance_count,
-    (float *) s->transform_matrices);
+  SetInstanceTransforms(s->mesh, s->instance_count, s->transform_matrices);
 }
 
 // Processes window inputs. Returns 0 on error.
@@ -152,6 +165,9 @@ static int RunMainLoop(ApplicationState *s) {
     // Update the camera position
     UpdateView(s, view);
 
+    if (!DrawMesh(s->lamp.mesh, (float *) view, (float *) projection)) {
+      return 0;
+    }
     if (!DrawMesh(s->floor, (float *) view, (float *) projection)) return 0;
     if (!DrawMesh(s->mesh, (float *) view, (float *) projection)) return 0;
     glfwSwapBuffers(s->window);
@@ -167,7 +183,8 @@ static float RandomFloat(void) {
 
 // Loads and initializes the floor plane mesh. Returns 0 on error.
 static int SetupFloorPlane(ApplicationState *s) {
-  mat4 floor_transform;
+  ModelAndNormal floor_transform;
+
   s->floor = LoadMesh("plane.obj", 1, "floor_texture.png");
   if (!s->floor) {
     printf("Failed loading floor plane mesh.\n");
@@ -179,12 +196,13 @@ static int SetupFloorPlane(ApplicationState *s) {
     return 0;
   }
 
-  glm_mat4_identity(floor_transform);
-  glm_translate_y(floor_transform, -5.0);
+  glm_mat4_identity(floor_transform.model);
+  glm_translate_y(floor_transform.model, -5.0);
   // Flip the plane to face upwards.
-  glm_rotate_x(floor_transform, 3.1415926536, floor_transform);
-  glm_scale_uni(floor_transform, 20.0);
-  if (!SetInstanceTransforms(s->floor, 1, (float *) floor_transform)) {
+  glm_rotate_x(floor_transform.model, 3.1415926536, floor_transform.model);
+  glm_scale_uni(floor_transform.model, 20.0);
+  ModelToNormalMatrix(floor_transform.model, floor_transform.normal);
+  if (!SetInstanceTransforms(s->floor, 1, &floor_transform)) {
     printf("Failed setting floor size and position.\n");
     return 0;
   }
@@ -209,7 +227,8 @@ static int SetupBoxMeshes(ApplicationState *s) {
     printf("Failed allocating memory for mesh positions.\n");
     return 0;
   }
-  s->transform_matrices = (mat4 *) calloc(s->instance_count, sizeof(mat4));
+  s->transform_matrices = (ModelAndNormal *) calloc(s->instance_count,
+    sizeof(ModelAndNormal));
   if (!s->transform_matrices) {
     printf("Failed allocating memory for model transform matrices.\n");
     return 0;
@@ -232,16 +251,50 @@ static int SetupBoxMeshes(ApplicationState *s) {
   return 1;
 }
 
+// Sets up the light position, color, etc. Returns 0 on error.
+static int SetupLamp(ApplicationState *s) {
+  ModelAndNormal lamp_transform;
+  vec3 lamp_position;
+  s->lamp.mesh = LoadMesh("pyramid.obj", 0);
+  if (!s->lamp.mesh) {
+    printf("Failed loading lamp mesh.\n");
+    return 0;
+  }
+  if (!SetShaderProgram(s->lamp.mesh, "basic_vertices.vert",
+    "lamp_object_shader.frag")) {
+    printf("Failed loading lamp shaders.\n");
+    return 0;
+  }
+
+  // Put the lamp at 0, 3, 6, make it small.
+  lamp_position[0] = 0;
+  lamp_position[1] = 3.0;
+  lamp_position[2] = 6.0;
+  glm_mat4_identity(lamp_transform.model);
+  glm_translate(lamp_transform.model, lamp_position);
+  glm_scale_uni(lamp_transform.model, 0.5);
+  ModelToNormalMatrix(lamp_transform.model, lamp_transform.normal);
+  if (!SetInstanceTransforms(s->lamp.mesh, 1, &lamp_transform)) {
+    printf("Failed setting lamp size and position.\n");
+    return 0;
+  }
+  return 1;
+}
+
 // Loads the 3D models to render. Returns 0 on error.
 static int Setup3DModels(ApplicationState *s) {
   if (!SetupFloorPlane(s)) return 0;
   if (!SetupBoxMeshes(s)) return 0;
+  if (!SetupLamp(s)) return 0;
   return 1;
 }
 
 int main(int argc, char **argv) {
   int to_return = 0;
   ApplicationState *s = NULL;
+  printf("Size of ModelAndNormal: %d\n", (int) sizeof(ModelAndNormal));
+  printf("Offset of model: %d\n", (int) offsetof(ModelAndNormal, model));
+  printf("Offset of normal: %d\n", (int) offsetof(ModelAndNormal, normal));
   if (!glfwInit()) {
     printf("Failed glfwInit().\n");
     return 1;

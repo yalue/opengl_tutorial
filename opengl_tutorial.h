@@ -22,17 +22,28 @@ typedef struct {
   float rotation_speed;
 } MeshTransformConfiguration;
 
+// Maintains information about a light in the scene.
+typedef struct {
+  // The mesh representing the light in the scene.
+  Mesh *mesh;
+  // The position of the light in the scene.
+  vec3 position;
+  // The light's color.
+  vec3 color;
+} LampConfiguration;
+
 // Overall application state.
 typedef struct {
   GLFWwindow *window;
   Mesh *mesh;
   Mesh *floor;
+  LampConfiguration lamp;
   // The number of times to draw the mesh.
   int instance_count;
   // Used to determine the position, rotation, etc, of each instance.
   MeshTransformConfiguration *transforms;
   // The transform matrices. Computed from transforms. One per instance.
-  mat4 *transform_matrices;
+  ModelAndNormal *transform_matrices;
   int window_width;
   int window_height;
   float aspect_ratio;

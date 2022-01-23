@@ -4,8 +4,15 @@
 extern "C" {
 #endif
 #include <stdarg.h>
+#include <cglm/cglm.h>
 #include <glad/glad.h>
 #include "shader_program.h"
+
+// Holds a model and normal matrix for a single instance of a model.
+typedef struct {
+  mat4 model;
+  mat3 normal;
+} ModelAndNormal;
 
 // Holds a single 3D model along with its associated textures. The contents of
 // this struct should not be modified by the user.
@@ -33,8 +40,8 @@ typedef struct {
 Mesh* LoadMesh(const char *object_file_path, int texture_count, ...);
 
 // Sets the instance_count field of m, and updates the instanced VBO. Requires
-// an array of 4x4 float matrices; one per instance. Returns 0 on error.
-int SetInstanceTransforms(Mesh *m, int instance_count, float *data);
+// an array of ModelAndNormal structs, one per instance. Returns 0 on error.
+int SetInstanceTransforms(Mesh *m, int instance_count, ModelAndNormal *data);
 
 // Sets up the shader program used by this mesh. Requires paths to the vertex
 // and fragment shader sources. See shader_program.h for some notes about this;

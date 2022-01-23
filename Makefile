@@ -1,9 +1,9 @@
 # This makefile is intended to be used on my Linux machine.
 .PHONY: all clean
 
-GLFW_DIR := /storage/other/glfw/install
+GLFW_DIR ?= /storage/other/glfw/install
 GLFW_CFLAGS := -I$(GLFW_DIR)/include -L$(GLFW_DIR)/lib -lglfw3 -ldl -lm -lpthread
-CFLAGS := -Wall -Werror -O3
+CFLAGS := -g -Wall -Werror -O3
 
 all: opengl_tutorial
 
@@ -14,7 +14,7 @@ parse_obj.o: parse_obj.c parse_obj.h
 	gcc $(CFLAGS) -c -o parse_obj.o parse_obj.c
 
 model.o: model.c model.h
-	gcc $(CFLAGS) -c -o model.o model.c -I glad/include
+	gcc $(CFLAGS) -c -o model.o model.c -I glad/include -I cglm/include
 
 shader_program.o: shader_program.c shader_program.h
 	gcc $(CFLAGS) -c -o shader_program.o shader_program.c -I glad/include
