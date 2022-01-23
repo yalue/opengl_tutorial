@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cglm/cglm.h>
 #include <glad/glad.h>
 #include "parse_obj.h"
 #define STBI_NO_PSD
@@ -143,9 +144,9 @@ Mesh* LoadMesh(const char *object_file_path, int texture_count, ...) {
   // First, a mat4 using four attribute locations (for the model matrix)
   for (i = 0; i < 4; i++) {
     // Note that the stride needs to skip an entire ModelAndNormal. This
-    // assumes that each row in the mat4 is exactly 4 * sizeof(float).
+    // assumes that each row in the mat4 is exactly sizeof(vec4).
     glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, sizeof(ModelAndNormal),
-      (void *) (i * 4 * sizeof(float) + offsetof(ModelAndNormal, model)));
+      (void *) (i * sizeof(vec4) + offsetof(ModelAndNormal, model)));
     glEnableVertexAttribArray(3 + i);
     glVertexAttribDivisor(3 + i, 1);
   }
@@ -154,7 +155,7 @@ Mesh* LoadMesh(const char *object_file_path, int texture_count, ...) {
     // Like for the model matrices. Assumes that each row in the mat3 is
     // exactly 3 * sizeof(float).
     glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, sizeof(ModelAndNormal),
-      (void *) (i * 3 * sizeof(float) + offsetof(ModelAndNormal, normal)));
+      (void *) (i * sizeof(vec3) + offsetof(ModelAndNormal, normal)));
     glEnableVertexAttribArray(7 + i);
     glVertexAttribDivisor(7 + i, 1);
   }
