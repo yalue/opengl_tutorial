@@ -1,8 +1,11 @@
 #version 330 core
 
-in vec2 texture_coord;
-in vec3 normal;
-in vec3 frag_position;
+in VS_OUT {
+  vec2 texture_coord;
+  vec3 normal;
+  vec3 frag_position;
+} fs_in;
+
 out vec4 frag_color;
 
 struct Lighting {

@@ -6,9 +6,11 @@ layout (location = 2) in vec2 texture_coord_in;
 layout (location = 3) in mat4 model_transform_in;
 layout (location = 7) in mat3 normal_transform_in;
 
-out vec2 texture_coord;
-out vec3 normal;
-out vec3 frag_position;
+out VS_OUT {
+  vec2 texture_coord;
+  vec3 normal;
+  vec3 frag_position;
+} vs_out;
 
 uniform mat4 projection_transform;
 uniform mat4 view_transform;
@@ -16,8 +18,8 @@ uniform mat4 view_transform;
 void main() {
   gl_Position = projection_transform * view_transform * model_transform_in *
     vec4(position_in, 1.0);
-  texture_coord = texture_coord_in;
-  normal = normal_in * normal_transform_in;
+  vs_out.texture_coord = texture_coord_in;
+  vs_out.normal = normal_in * normal_transform_in;
   // Fragment position, for lighting computations.
-  frag_position = vec3(model_transform_in * vec4(position_in, 1.0));
+  vs_out.frag_position = vec3(model_transform_in * vec4(position_in, 1.0));
 }

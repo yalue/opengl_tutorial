@@ -107,6 +107,8 @@ static void UpdateView(ApplicationState *s, mat4 view) {
   glm_vec3_zero(up);
   up[1] = 1.0;
   tmp = glfwGetTime() / 4.0;
+  // Uncomment to disable the camera movement.
+  // tmp = 0;
   position[0] = sin(tmp) * 15.0;
   position[2] = cos(tmp) * 15.0;
   glm_lookat(position, target, up, view);
@@ -125,20 +127,6 @@ static void UpdateLampPosition(ApplicationState *s) {
   glm_scale_uni(transform.model, 0.5);
   ModelToNormalMatrix(transform.model, transform.normal);
   SetInstanceTransforms(s->lamp.mesh, 1, &transform);
-/*
-  glm_mat4_identity(lamp_transform.model);
-  glm_translate(lamp_transform.model, s->lamp.position);
-  glm_scale_uni(lamp_transform.model, 0.5);
-  ModelToNormalMatrix(lamp_transform.model, lamp_transform.normal);
-  if (!SetInstanceTransforms(s->lamp.mesh, 1, &lamp_transform)) {
-    printf("Failed setting lamp size and position.\n");
-    return 0;
-  }
-*/
-
-  //s->lamp.position[0] = 0;
-  //s->lamp.position[1] = 3.0;
-  //s->lamp.position[2] = 6.0;
 }
 
 // Updates the mesh_transforms matrices.
