@@ -9,6 +9,14 @@ extern "C" {
 // in a shader.
 #define MAX_TEXTURES (16)
 
+// Just holds the uniform indices for lighting stuff.
+typedef struct {
+  GLint position;
+  GLint color;
+  GLint ambient_color;
+  GLint ambient_power;
+} LightingUniforms;
+
 // Holds information about a shader program, including some uniform indices.
 typedef struct {
   // The actual handle to the shader program.
@@ -26,6 +34,7 @@ typedef struct {
   // This is the index of the "projection_transform" uniform, or -1 if no such
   // uniform exists in source code.
   GLint projection_uniform;
+  LightingUniforms lighting_uniforms;
 } ShaderProgram;
 
 // Takes paths to the shader source files. Allocates and returns a

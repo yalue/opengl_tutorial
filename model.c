@@ -210,13 +210,21 @@ int SetInstanceTransforms(Mesh *m, int instance_count, ModelAndNormal *data) {
   return CheckGLErrors();
 }
 
-int DrawMesh(Mesh *m, float *view, float *projection) {
+int DrawMesh(Mesh *m, float *view, float *projection, float ambient_power,
+  vec3 ambient_color, vec3 light_color, vec3 light_position) {
   int i = 0;
+  LightingUniforms *lighting = &(m->shader_program->lighting_uniforms);
   GLuint view_uniform = m->shader_program->view_uniform;
   GLuint projection_uniform = m->shader_program->projection_uniform;
   glUseProgram(m->shader_program->shader_program);
+  // TODO: Replace the arguments to DrawMesh (view, proj, lighting stuff),
+  // with a uniform buffer.
   glUniformMatrix4fv(view_uniform, 1, GL_FALSE, view);
   glUniformMatrix4fv(projection_uniform, 1, GL_FALSE, projection);
+  glUniform1f(lighting->ambient_power, ambient_power);
+  glUniform3fv(lighting->ambient_color, 1, ambient_color);
+  glUniform3fv(lighting->position, 1, light_position);
+  glUniform3fv(lighting->color, 1, light_color);
   // Set up the textures.
   for (i = 0; i < m->texture_count; i++) {
     glUniform1i(m->shader_program->texture_uniform_indices[i], i);
@@ -225,8 +233,12 @@ int DrawMesh(Mesh *m, float *view, float *projection) {
   }
   glActiveTexture(GL_TEXTURE0);
   glBindVertexArray(m->vertex_array);
-  glDrawElementsInstanced(GL_TRIANGLES, m->element_count, GL_UNSIGNED_INT, 0,
-    m->instance_count);
+  if (m->instance_count > 1) {
+    glDrawElementsInstanced(GL_TRIANGLES, m->element_count, GL_UNSIGNED_INT, 0,
+      m->instance_count);
+  } else {
+    glDrawElements(GL_TRIANGLES, m->element_count, GL_UNSIGNED_INT, 0);
+  }
   return CheckGLErrors();
 }
 

@@ -74,6 +74,15 @@ static int SetupWindow(ApplicationState *s) {
   return 1;
 }
 
+// Sets the contents of the normal mat3 to the correct normal matrix for the
+// given model matrix.
+static void ModelToNormalMatrix(mat4 model, mat3 normal) {
+  mat4 dst;
+  glm_mat4_inv(model, dst);
+  glm_mat4_transpose(dst);
+  glm_mat4_pick3(dst, normal);
+}
+
 // Gets the view and projection matrices for the scene.
 static void GetViewAndProjection(ApplicationState *s, mat4 view,
     mat4 projection) {
@@ -97,19 +106,39 @@ static void UpdateView(ApplicationState *s, mat4 view) {
   glm_vec3_zero(target);
   glm_vec3_zero(up);
   up[1] = 1.0;
-  tmp = glfwGetTime() / 2.0;
-  position[0] = sin(tmp) * 10.0;
-  position[2] = cos(tmp) * 10.0;
+  tmp = glfwGetTime() / 4.0;
+  position[0] = sin(tmp) * 15.0;
+  position[2] = cos(tmp) * 15.0;
   glm_lookat(position, target, up, view);
 }
 
-// Sets the contents of the normal mat3 to the correct normal matrix for the
-// given model matrix.
-static void ModelToNormalMatrix(mat4 model, mat3 normal) {
-  mat4 dst;
-  glm_mat4_inv(model, dst);
-  glm_mat4_transpose(dst);
-  glm_mat4_pick3(dst, normal);
+static void UpdateLampPosition(ApplicationState *s) {
+  ModelAndNormal transform;
+  float tmp;
+  s->lamp.position[1] = 2.0;
+  tmp = glfwGetTime() / 2.0;
+  s->lamp.position[0] = sin(tmp) * 8.0;
+  s->lamp.position[2] = cos(tmp) * 8.0;
+  // Update the lamp mesh's location
+  glm_mat4_identity(transform.model);
+  glm_translate(transform.model, s->lamp.position);
+  glm_scale_uni(transform.model, 0.5);
+  ModelToNormalMatrix(transform.model, transform.normal);
+  SetInstanceTransforms(s->lamp.mesh, 1, &transform);
+/*
+  glm_mat4_identity(lamp_transform.model);
+  glm_translate(lamp_transform.model, s->lamp.position);
+  glm_scale_uni(lamp_transform.model, 0.5);
+  ModelToNormalMatrix(lamp_transform.model, lamp_transform.normal);
+  if (!SetInstanceTransforms(s->lamp.mesh, 1, &lamp_transform)) {
+    printf("Failed setting lamp size and position.\n");
+    return 0;
+  }
+*/
+
+  //s->lamp.position[0] = 0;
+  //s->lamp.position[1] = 3.0;
+  //s->lamp.position[2] = 6.0;
 }
 
 // Updates the mesh_transforms matrices.
@@ -143,6 +172,11 @@ static int ProcessInputs(GLFWwindow *window) {
 static int RunMainLoop(ApplicationState *s) {
   mat4 view, projection;
   GetViewAndProjection(s, view, projection);
+  vec3 ambient_color;
+  ambient_color[0] = 1.0;
+  ambient_color[1] = 1.0;
+  ambient_color[2] = 1.0;
+
 
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -165,11 +199,24 @@ static int RunMainLoop(ApplicationState *s) {
     // Update the camera position
     UpdateView(s, view);
 
-    if (!DrawMesh(s->lamp.mesh, (float *) view, (float *) projection)) {
+    // Move around the lamp
+    UpdateLampPosition(s);
+
+    // TODO (next): Implement specular lighting, following the tutorial at
+    // https://learnopengl.com/Lighting/Basic-Lighting
+
+    if (!DrawMesh(s->lamp.mesh, (float *) view, (float *) projection, 0.4,
+      ambient_color, s->lamp.color, s->lamp.position)) {
       return 0;
     }
-    if (!DrawMesh(s->floor, (float *) view, (float *) projection)) return 0;
-    if (!DrawMesh(s->mesh, (float *) view, (float *) projection)) return 0;
+    if (!DrawMesh(s->floor, (float *) view, (float *) projection, 0.4,
+      ambient_color, s->lamp.color, s->lamp.position)) {
+      return 0;
+    }
+    if (!DrawMesh(s->mesh, (float *) view, (float *) projection, 0.4,
+      ambient_color, s->lamp.color, s->lamp.position)) {
+      return 0;
+    }
     glfwSwapBuffers(s->window);
     glfwPollEvents();
     if (!CheckGLErrors()) return 0;
@@ -254,7 +301,6 @@ static int SetupBoxMeshes(ApplicationState *s) {
 // Sets up the light position, color, etc. Returns 0 on error.
 static int SetupLamp(ApplicationState *s) {
   ModelAndNormal lamp_transform;
-  vec3 lamp_position;
   s->lamp.mesh = LoadMesh("pyramid.obj", 0);
   if (!s->lamp.mesh) {
     printf("Failed loading lamp mesh.\n");
@@ -267,11 +313,12 @@ static int SetupLamp(ApplicationState *s) {
   }
 
   // Put the lamp at 0, 3, 6, make it small.
-  lamp_position[0] = 0;
-  lamp_position[1] = 3.0;
-  lamp_position[2] = 6.0;
+  s->lamp.position[0] = 0;
+  s->lamp.position[1] = 3.0;
+  s->lamp.position[2] = 6.0;
+  glm_vec3_one(s->lamp.color);
   glm_mat4_identity(lamp_transform.model);
-  glm_translate(lamp_transform.model, lamp_position);
+  glm_translate(lamp_transform.model, s->lamp.position);
   glm_scale_uni(lamp_transform.model, 0.5);
   ModelToNormalMatrix(lamp_transform.model, lamp_transform.normal);
   if (!SetInstanceTransforms(s->lamp.mesh, 1, &lamp_transform)) {

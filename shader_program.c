@@ -45,6 +45,22 @@ static int GetUniformIndices(ShaderProgram *p) {
     &(p->projection_uniform))) {
     return 0;
   }
+  if (!UniformIndex(p->shader_program, "lighting.position",
+    &(p->lighting_uniforms.position))) {
+    return 0;
+  }
+  if (!UniformIndex(p->shader_program, "lighting.color",
+    &(p->lighting_uniforms.color))) {
+    return 0;
+  }
+  if (!UniformIndex(p->shader_program, "lighting.ambient_color",
+    &(p->lighting_uniforms.ambient_color))) {
+    return 0;
+  }
+  if (!UniformIndex(p->shader_program, "lighting.ambient_power",
+    &(p->lighting_uniforms.ambient_power))) {
+    return 0;
+  }
   return 1;
 }
 
