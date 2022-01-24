@@ -10,6 +10,22 @@ extern "C" {
 #include <GLFW/glfw3.h>
 #include "model.h"
 
+// Mimics the layout of the Matrices uniform block.
+typedef struct {
+  mat4 projection;
+  mat4 view;
+} MatricesUniformBlock;
+
+// Mimics the layout of the Lighting uniform block.
+typedef struct {
+  // Use vec4's rather than vec3's for alignment reasons.
+  vec4 position;
+  vec4 color;
+  vec4 ambient_color;
+  float ambient_power;
+  float pad[3];
+} LightingUniformBlock;
+
 // Maintains data indicating how a single mesh should be transformed.
 typedef struct {
   // The position (translation) of the mesh relative to the origin.
@@ -22,22 +38,12 @@ typedef struct {
   float rotation_speed;
 } MeshTransformConfiguration;
 
-// Maintains information about a light in the scene.
-typedef struct {
-  // The mesh representing the light in the scene.
-  Mesh *mesh;
-  // The position of the light in the scene.
-  vec3 position;
-  // The light's color.
-  vec3 color;
-} LampConfiguration;
-
 // Overall application state.
 typedef struct {
   GLFWwindow *window;
   Mesh *mesh;
   Mesh *floor;
-  LampConfiguration lamp;
+  Mesh *lamp;
   // The number of times to draw the mesh.
   int instance_count;
   // Used to determine the position, rotation, etc, of each instance.
@@ -47,6 +53,11 @@ typedef struct {
   int window_width;
   int window_height;
   float aspect_ratio;
+  // Holds the shared ubo for shared transform matrices and lighting.
+  GLuint uniform_buffer;
+  // The CPU-side copy of the matrices and lighting uniform data.
+  MatricesUniformBlock matrices_uniform;
+  LightingUniformBlock lighting_uniform;
 } ApplicationState;
 
 // Allocates an ApplicationState struct and initializes its values to 0.

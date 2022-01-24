@@ -51,9 +51,8 @@ int SetShaderProgram(Mesh *m, const char *vert_src, const char *frag_src);
 
 // Draws the mesh. Returns 0 on error, including if any GL errors occurs, or if
 // SetInstanceTransforms hasn't been called to create some instances of the
-// mesh. Requires pointers to the 4x4 view and projection matrices.
-int DrawMesh(Mesh *m, float *view, float *projection, float ambient_power,
-  vec3 ambient_color, vec3 light_color, vec3 light_position);
+// mesh.
+int DrawMesh(Mesh *m);
 
 // Frees any resources associated with the mesh, along with the mesh struct
 // itself. The mesh pointer is invalid after passing it to this.

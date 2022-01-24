@@ -12,11 +12,13 @@ out VS_OUT {
   vec3 frag_position;
 } vs_out;
 
-uniform mat4 projection_transform;
-uniform mat4 view_transform;
+layout(std140) uniform Matrices {
+  mat4 projection;
+  mat4 view;
+} matrices;
 
 void main() {
-  gl_Position = projection_transform * view_transform * model_transform_in *
+  gl_Position = matrices.projection * matrices.view * model_transform_in *
     vec4(position_in, 1.0);
   vs_out.texture_coord = texture_coord_in;
   vs_out.normal = normal_in * normal_transform_in;

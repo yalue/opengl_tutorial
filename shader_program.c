@@ -30,6 +30,7 @@ static int UniformIndex(GLuint program, const char *name, GLint *index) {
 // on error.
 static int GetUniformIndices(ShaderProgram *p) {
   char uniform_name[128];
+  GLuint block_index;
   int i;
   for (i = 0; i < p->texture_count; i++) {
     snprintf(uniform_name, sizeof(uniform_name), "texture%d", i);
@@ -38,30 +39,23 @@ static int GetUniformIndices(ShaderProgram *p) {
       return 0;
     }
   }
-  if (!UniformIndex(p->shader_program, "view_transform", &(p->view_uniform))) {
+  block_index = glGetUniformBlockIndex(p->shader_program, "Matrices");
+  if (block_index == GL_INVALID_INDEX) {
+    printf("Failed getting index of Matrices uniform block.\n");
+    CheckGLErrors();
     return 0;
   }
-  if (!UniformIndex(p->shader_program, "projection_transform",
-    &(p->projection_uniform))) {
+  glUniformBlockBinding(p->shader_program, block_index,
+    MATRICES_UNIFORM_BINDING);
+  block_index = glGetUniformBlockIndex(p->shader_program, "Lighting");
+  if (block_index == GL_INVALID_INDEX) {
+    printf("Failed getting index of Lighting uniform block.\n");
+    CheckGLErrors();
     return 0;
   }
-  if (!UniformIndex(p->shader_program, "lighting.position",
-    &(p->lighting_uniforms.position))) {
-    return 0;
-  }
-  if (!UniformIndex(p->shader_program, "lighting.color",
-    &(p->lighting_uniforms.color))) {
-    return 0;
-  }
-  if (!UniformIndex(p->shader_program, "lighting.ambient_color",
-    &(p->lighting_uniforms.ambient_color))) {
-    return 0;
-  }
-  if (!UniformIndex(p->shader_program, "lighting.ambient_power",
-    &(p->lighting_uniforms.ambient_power))) {
-    return 0;
-  }
-  return 1;
+  glUniformBlockBinding(p->shader_program, block_index,
+    LIGHTING_UNIFORM_BINDING);
+  return CheckGLErrors();
 }
 
 // Loads and compiles a shader from the given file path. Returns the GLuint

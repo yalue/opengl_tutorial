@@ -39,7 +39,8 @@ void FreeApplicationState(ApplicationState *s) {
   if (s->window) glfwDestroyWindow(s->window);
   DestroyMesh(s->mesh);
   DestroyMesh(s->floor);
-  DestroyMesh(s->lamp.mesh);
+  DestroyMesh(s->lamp);
+  glDeleteBuffers(1, &(s->uniform_buffer));
   free(s->transforms);
   free(s->transform_matrices);
   memset(s, 0, sizeof(*s));
@@ -83,9 +84,10 @@ static void ModelToNormalMatrix(mat4 model, mat3 normal) {
   glm_mat4_pick3(dst, normal);
 }
 
-// Gets the view and projection matrices for the scene.
-static void GetViewAndProjection(ApplicationState *s, mat4 view,
-    mat4 projection) {
+// Sets the view and projection matrices for the scene, filling in the matrix
+// uniform block.
+static void GetViewAndProjection(ApplicationState *s) {
+  mat4 view, projection;
   vec3 view_translate;
   glm_mat4_identity(view);
   glm_mat4_identity(projection);
@@ -95,13 +97,15 @@ static void GetViewAndProjection(ApplicationState *s, mat4 view,
   glm_translate(view, view_translate);
   // Create a perspective, with 45 degree FOV
   glm_perspective(45.0, s->aspect_ratio, 0.01, 100.0, projection);
+  glm_mat4_copy(projection, s->matrices_uniform.projection);
+  glm_mat4_copy(view, s->matrices_uniform.view);
 }
 
-// Updates the view matrix.
-static void UpdateView(ApplicationState *s, mat4 view) {
+// Updates the view matrix. Requires the uniform buffer to be bound.
+static void UpdateView(ApplicationState *s) {
   vec3 position, target, up;
   float tmp;
-  glm_mat4_identity(view);
+  glm_mat4_identity(s->matrices_uniform.view);
   glm_vec3_zero(position);
   glm_vec3_zero(target);
   glm_vec3_zero(up);
@@ -111,22 +115,26 @@ static void UpdateView(ApplicationState *s, mat4 view) {
   // tmp = 0;
   position[0] = sin(tmp) * 15.0;
   position[2] = cos(tmp) * 15.0;
-  glm_lookat(position, target, up, view);
+  glm_lookat(position, target, up, s->matrices_uniform.view);
 }
 
+// Updates the lamp's location and associated uniform data. Requires the
+// uniform buffer to be bound.
 static void UpdateLampPosition(ApplicationState *s) {
   ModelAndNormal transform;
+  vec3 lamp_pos;
   float tmp;
-  s->lamp.position[1] = 2.0;
+  s->lighting_uniform.position[1] = 2.0;
   tmp = glfwGetTime() / 2.0;
-  s->lamp.position[0] = sin(tmp) * 8.0;
-  s->lamp.position[2] = cos(tmp) * 8.0;
+  s->lighting_uniform.position[0] = sin(tmp) * 8.0;
+  s->lighting_uniform.position[2] = cos(tmp) * 8.0;
+  glm_vec4_copy3(s->lighting_uniform.position, lamp_pos);
   // Update the lamp mesh's location
   glm_mat4_identity(transform.model);
-  glm_translate(transform.model, s->lamp.position);
+  glm_translate(transform.model, lamp_pos);
   glm_scale_uni(transform.model, 0.5);
   ModelToNormalMatrix(transform.model, transform.normal);
-  SetInstanceTransforms(s->lamp.mesh, 1, &transform);
+  SetInstanceTransforms(s->lamp, 1, &transform);
 }
 
 // Updates the mesh_transforms matrices.
@@ -158,13 +166,11 @@ static int ProcessInputs(GLFWwindow *window) {
 
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
-  mat4 view, projection;
-  GetViewAndProjection(s, view, projection);
-  vec3 ambient_color;
-  ambient_color[0] = 1.0;
-  ambient_color[1] = 1.0;
-  ambient_color[2] = 1.0;
-
+  GetViewAndProjection(s);
+  s->lighting_uniform.ambient_color[0] = 1.0;
+  s->lighting_uniform.ambient_color[1] = 1.0;
+  s->lighting_uniform.ambient_color[2] = 1.0;
+  s->lighting_uniform.ambient_power = 0.4;
 
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -184,27 +190,24 @@ static int RunMainLoop(ApplicationState *s) {
     // Update the model transforms
     UpdateModelTransforms(s);
 
-    // Update the camera position
-    UpdateView(s, view);
-
-    // Move around the lamp
+    UpdateView(s);
     UpdateLampPosition(s);
+
+    // Update the uniform data, now that we've adjusted the camera and lamp.
+    // NOTE: Maybe eventually update this to only copy the parts that change.
+    glBindBuffer(GL_UNIFORM_BUFFER, s->uniform_buffer);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MatricesUniformBlock),
+      (void *) &(s->matrices_uniform));
+    glBufferSubData(GL_UNIFORM_BUFFER, sizeof(MatricesUniformBlock),
+      sizeof(LightingUniformBlock), (void *) &(s->lighting_uniform));
 
     // TODO (next): Implement specular lighting, following the tutorial at
     // https://learnopengl.com/Lighting/Basic-Lighting
 
-    if (!DrawMesh(s->lamp.mesh, (float *) view, (float *) projection, 0.4,
-      ambient_color, s->lamp.color, s->lamp.position)) {
-      return 0;
-    }
-    if (!DrawMesh(s->floor, (float *) view, (float *) projection, 0.4,
-      ambient_color, s->lamp.color, s->lamp.position)) {
-      return 0;
-    }
-    if (!DrawMesh(s->mesh, (float *) view, (float *) projection, 0.4,
-      ambient_color, s->lamp.color, s->lamp.position)) {
-      return 0;
-    }
+    if (!DrawMesh(s->lamp)) return 0;
+    if (!DrawMesh(s->floor)) return 0;
+    if (!DrawMesh(s->mesh)) return 0;
+
     glfwSwapBuffers(s->window);
     glfwPollEvents();
     if (!CheckGLErrors()) return 0;
@@ -289,27 +292,29 @@ static int SetupBoxMeshes(ApplicationState *s) {
 // Sets up the light position, color, etc. Returns 0 on error.
 static int SetupLamp(ApplicationState *s) {
   ModelAndNormal lamp_transform;
-  s->lamp.mesh = LoadMesh("pyramid.obj", 0);
-  if (!s->lamp.mesh) {
+  vec3 lamp_pos;
+  s->lamp = LoadMesh("pyramid.obj", 0);
+  if (!s->lamp) {
     printf("Failed loading lamp mesh.\n");
     return 0;
   }
-  if (!SetShaderProgram(s->lamp.mesh, "basic_vertices.vert",
+  if (!SetShaderProgram(s->lamp, "basic_vertices.vert",
     "lamp_object_shader.frag")) {
     printf("Failed loading lamp shaders.\n");
     return 0;
   }
 
   // Put the lamp at 0, 3, 6, make it small.
-  s->lamp.position[0] = 0;
-  s->lamp.position[1] = 3.0;
-  s->lamp.position[2] = 6.0;
-  glm_vec3_one(s->lamp.color);
+  s->lighting_uniform.position[0] = 0;
+  s->lighting_uniform.position[1] = 3.0;
+  s->lighting_uniform.position[2] = 6.0;
+  glm_vec4_copy3(s->lighting_uniform.position, lamp_pos);
+  glm_vec4_one(s->lighting_uniform.color);
   glm_mat4_identity(lamp_transform.model);
-  glm_translate(lamp_transform.model, s->lamp.position);
+  glm_translate(lamp_transform.model, lamp_pos);
   glm_scale_uni(lamp_transform.model, 0.5);
   ModelToNormalMatrix(lamp_transform.model, lamp_transform.normal);
-  if (!SetInstanceTransforms(s->lamp.mesh, 1, &lamp_transform)) {
+  if (!SetInstanceTransforms(s->lamp, 1, &lamp_transform)) {
     printf("Failed setting lamp size and position.\n");
     return 0;
   }
@@ -324,12 +329,27 @@ static int Setup3DModels(ApplicationState *s) {
   return 1;
 }
 
+// Sets up the application-wide shared uniform buffer.
+static int SetupUniformBuffer(ApplicationState *s) {
+  glGenBuffers(1, &(s->uniform_buffer));
+  glBindBuffer(GL_UNIFORM_BUFFER, s->uniform_buffer);
+  // Preallocate a buffer to hold the uniform data we need.
+  glBufferData(GL_UNIFORM_BUFFER, sizeof(MatricesUniformBlock) +
+    sizeof(LightingUniformBlock), NULL, GL_STATIC_DRAW);
+  // We'll put the matrices at the start of the buffer, and the lighting
+  // afterwards.
+  glBindBufferRange(GL_UNIFORM_BUFFER, MATRICES_UNIFORM_BINDING,
+    s->uniform_buffer, 0, sizeof(MatricesUniformBlock));
+  glBindBufferRange(GL_UNIFORM_BUFFER, LIGHTING_UNIFORM_BINDING,
+    s->uniform_buffer, sizeof(MatricesUniformBlock),
+    sizeof(LightingUniformBlock));
+  glBindBuffer(GL_UNIFORM_BUFFER, 0);
+  return CheckGLErrors();
+}
+
 int main(int argc, char **argv) {
   int to_return = 0;
   ApplicationState *s = NULL;
-  printf("Size of ModelAndNormal: %d\n", (int) sizeof(ModelAndNormal));
-  printf("Offset of model: %d\n", (int) offsetof(ModelAndNormal, model));
-  printf("Offset of normal: %d\n", (int) offsetof(ModelAndNormal, normal));
   if (!glfwInit()) {
     printf("Failed glfwInit().\n");
     return 1;
@@ -352,6 +372,11 @@ int main(int argc, char **argv) {
   glViewport(0, 0, s->window_width, s->window_height);
   glfwSetFramebufferSizeCallback(s->window, FramebufferResizedCallback);
   if (!Setup3DModels(s)) {
+    to_return = 1;
+    goto cleanup;
+  }
+  if (!SetupUniformBuffer(s)) {
+    printf("Errors setting up uniform buffer.\n");
     to_return = 1;
     goto cleanup;
   }
