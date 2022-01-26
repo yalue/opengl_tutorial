@@ -5,10 +5,8 @@ extern "C" {
 #endif
 #include <glad/glad.h>
 
-// The binding point for the projection/view matrices and lighting info uniform
-// blocks.
-#define MATRICES_UNIFORM_BINDING (0)
-#define LIGHTING_UNIFORM_BINDING (1)
+// The binding point for the shared uniform block.
+#define SHARED_UNIFORMS_BINDING (0)
 
 // The maximum number of textures (named texture0 through textureN) we support
 // in a shader.

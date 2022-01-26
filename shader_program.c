@@ -39,22 +39,14 @@ static int GetUniformIndices(ShaderProgram *p) {
       return 0;
     }
   }
-  block_index = glGetUniformBlockIndex(p->shader_program, "Matrices");
+  block_index = glGetUniformBlockIndex(p->shader_program, "SharedUniforms");
   if (block_index == GL_INVALID_INDEX) {
-    printf("Failed getting index of Matrices uniform block.\n");
+    printf("Failed getting index of shared uniform block.\n");
     CheckGLErrors();
     return 0;
   }
   glUniformBlockBinding(p->shader_program, block_index,
-    MATRICES_UNIFORM_BINDING);
-  block_index = glGetUniformBlockIndex(p->shader_program, "Lighting");
-  if (block_index == GL_INVALID_INDEX) {
-    printf("Failed getting index of Lighting uniform block.\n");
-    CheckGLErrors();
-    return 0;
-  }
-  glUniformBlockBinding(p->shader_program, block_index,
-    LIGHTING_UNIFORM_BINDING);
+    SHARED_UNIFORMS_BINDING);
   return CheckGLErrors();
 }
 

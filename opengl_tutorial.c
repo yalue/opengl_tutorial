@@ -97,15 +97,15 @@ static void GetViewAndProjection(ApplicationState *s) {
   glm_translate(view, view_translate);
   // Create a perspective, with 45 degree FOV
   glm_perspective(45.0, s->aspect_ratio, 0.01, 100.0, projection);
-  glm_mat4_copy(projection, s->matrices_uniform.projection);
-  glm_mat4_copy(view, s->matrices_uniform.view);
+  glm_mat4_copy(projection, s->shared_uniforms.projection);
+  glm_mat4_copy(view, s->shared_uniforms.view);
 }
 
 // Updates the view matrix. Requires the uniform buffer to be bound.
 static void UpdateView(ApplicationState *s) {
   vec3 position, target, up;
   float tmp;
-  glm_mat4_identity(s->matrices_uniform.view);
+  glm_mat4_identity(s->shared_uniforms.view);
   glm_vec3_zero(position);
   glm_vec3_zero(target);
   glm_vec3_zero(up);
@@ -115,20 +115,20 @@ static void UpdateView(ApplicationState *s) {
   // tmp = 0;
   position[0] = sin(tmp) * 15.0;
   position[2] = cos(tmp) * 15.0;
-  glm_lookat(position, target, up, s->matrices_uniform.view);
+  glm_lookat(position, target, up, s->shared_uniforms.view);
 }
 
 // Updates the lamp's location and associated uniform data. Requires the
 // uniform buffer to be bound.
-static void UpdateLampPosition(ApplicationState *s) {
+static void UpdateLamp(ApplicationState *s) {
   ModelAndNormal transform;
   vec3 lamp_pos;
   float tmp;
-  s->lighting_uniform.position[1] = 2.0;
+  s->shared_uniforms.lamp_position[1] = 2.0;
   tmp = glfwGetTime() / 2.0;
-  s->lighting_uniform.position[0] = sin(tmp) * 8.0;
-  s->lighting_uniform.position[2] = cos(tmp) * 8.0;
-  glm_vec4_copy3(s->lighting_uniform.position, lamp_pos);
+  s->shared_uniforms.lamp_position[0] = sin(tmp) * 8.0;
+  s->shared_uniforms.lamp_position[2] = cos(tmp) * 8.0;
+  glm_vec4_copy3(s->shared_uniforms.lamp_position, lamp_pos);
   // Update the lamp mesh's location
   glm_mat4_identity(transform.model);
   glm_translate(transform.model, lamp_pos);
@@ -167,10 +167,10 @@ static int ProcessInputs(GLFWwindow *window) {
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
   GetViewAndProjection(s);
-  s->lighting_uniform.ambient_color[0] = 1.0;
-  s->lighting_uniform.ambient_color[1] = 1.0;
-  s->lighting_uniform.ambient_color[2] = 1.0;
-  s->lighting_uniform.ambient_power = 0.4;
+  s->shared_uniforms.ambient_color[0] = 1.0;
+  s->shared_uniforms.ambient_color[1] = 1.0;
+  s->shared_uniforms.ambient_color[2] = 1.0;
+  s->shared_uniforms.ambient_power = 0.4;
 
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -191,15 +191,13 @@ static int RunMainLoop(ApplicationState *s) {
     UpdateModelTransforms(s);
 
     UpdateView(s);
-    UpdateLampPosition(s);
+    UpdateLamp(s);
 
     // Update the uniform data, now that we've adjusted the camera and lamp.
     // NOTE: Maybe eventually update this to only copy the parts that change.
     glBindBuffer(GL_UNIFORM_BUFFER, s->uniform_buffer);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MatricesUniformBlock),
-      (void *) &(s->matrices_uniform));
-    glBufferSubData(GL_UNIFORM_BUFFER, sizeof(MatricesUniformBlock),
-      sizeof(LightingUniformBlock), (void *) &(s->lighting_uniform));
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(SharedUniformBlock),
+      (void *) &(s->shared_uniforms), GL_STATIC_DRAW);
 
     // TODO (next): Implement specular lighting, following the tutorial at
     // https://learnopengl.com/Lighting/Basic-Lighting
@@ -304,12 +302,13 @@ static int SetupLamp(ApplicationState *s) {
     return 0;
   }
 
-  // Put the lamp at 0, 3, 6, make it small.
-  s->lighting_uniform.position[0] = 0;
-  s->lighting_uniform.position[1] = 3.0;
-  s->lighting_uniform.position[2] = 6.0;
-  glm_vec4_copy3(s->lighting_uniform.position, lamp_pos);
-  glm_vec4_one(s->lighting_uniform.color);
+  // The initial position of the lamp is somewhat arbitrary; it will be changed
+  // by UpdateLamp(...) before it's ever seen.
+  s->shared_uniforms.lamp_position[0] = 0;
+  s->shared_uniforms.lamp_position[1] = 3.0;
+  s->shared_uniforms.lamp_position[2] = 6.0;
+  glm_vec4_copy3(s->shared_uniforms.lamp_position, lamp_pos);
+  glm_vec4_one(s->shared_uniforms.lamp_color);
   glm_mat4_identity(lamp_transform.model);
   glm_translate(lamp_transform.model, lamp_pos);
   glm_scale_uni(lamp_transform.model, 0.5);
@@ -334,15 +333,12 @@ static int SetupUniformBuffer(ApplicationState *s) {
   glGenBuffers(1, &(s->uniform_buffer));
   glBindBuffer(GL_UNIFORM_BUFFER, s->uniform_buffer);
   // Preallocate a buffer to hold the uniform data we need.
-  glBufferData(GL_UNIFORM_BUFFER, sizeof(MatricesUniformBlock) +
-    sizeof(LightingUniformBlock), NULL, GL_STATIC_DRAW);
+  glBufferData(GL_UNIFORM_BUFFER, sizeof(SharedUniformBlock), NULL,
+    GL_STATIC_DRAW);
   // We'll put the matrices at the start of the buffer, and the lighting
   // afterwards.
-  glBindBufferRange(GL_UNIFORM_BUFFER, MATRICES_UNIFORM_BINDING,
-    s->uniform_buffer, 0, sizeof(MatricesUniformBlock));
-  glBindBufferRange(GL_UNIFORM_BUFFER, LIGHTING_UNIFORM_BINDING,
-    s->uniform_buffer, sizeof(MatricesUniformBlock),
-    sizeof(LightingUniformBlock));
+  glBindBufferRange(GL_UNIFORM_BUFFER, SHARED_UNIFORMS_BINDING,
+    s->uniform_buffer, 0, sizeof(SharedUniformBlock));
   glBindBuffer(GL_UNIFORM_BUFFER, 0);
   return CheckGLErrors();
 }

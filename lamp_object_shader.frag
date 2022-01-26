@@ -8,16 +8,18 @@ in VS_OUT {
 
 out vec4 frag_color;
 
-layout(std140) uniform Lighting {
-  // These are all vec3's, but padded to vec4
-  vec4 position;
-  vec4 color;
+layout(std140) uniform SharedUniforms {
+  mat4 projection;
+  mat4 view;
+  // Use vec4's rather than vec3's for alignment reasons.
+  vec4 lamp_position;
+  vec4 lamp_color;
   vec4 ambient_color;
   float ambient_power;
   float pad[3];
-} lighting;
+} shared_uniforms;
 
 void main() {
-  frag_color = vec4(lighting.color.xyz, 1.0);
+  frag_color = vec4(shared_uniforms.lamp_color.xyz, 1.0);
 }
 

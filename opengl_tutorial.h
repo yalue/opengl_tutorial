@@ -11,20 +11,17 @@ extern "C" {
 #include "model.h"
 
 // Mimics the layout of the Matrices uniform block.
+// Holds the uniforms shared by each shader.
 typedef struct {
   mat4 projection;
   mat4 view;
-} MatricesUniformBlock;
-
-// Mimics the layout of the Lighting uniform block.
-typedef struct {
   // Use vec4's rather than vec3's for alignment reasons.
-  vec4 position;
-  vec4 color;
+  vec4 lamp_position;
+  vec4 lamp_color;
   vec4 ambient_color;
   float ambient_power;
   float pad[3];
-} LightingUniformBlock;
+} SharedUniformBlock;
 
 // Maintains data indicating how a single mesh should be transformed.
 typedef struct {
@@ -55,9 +52,7 @@ typedef struct {
   float aspect_ratio;
   // Holds the shared ubo for shared transform matrices and lighting.
   GLuint uniform_buffer;
-  // The CPU-side copy of the matrices and lighting uniform data.
-  MatricesUniformBlock matrices_uniform;
-  LightingUniformBlock lighting_uniform;
+  SharedUniformBlock shared_uniforms;
 } ApplicationState;
 
 // Allocates an ApplicationState struct and initializes its values to 0.
