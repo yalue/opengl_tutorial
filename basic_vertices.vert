@@ -12,16 +12,8 @@ out VS_OUT {
   vec3 frag_position;
 } vs_out;
 
-layout(std140) uniform SharedUniforms {
-  mat4 projection;
-  mat4 view;
-  // Use vec4's rather than vec3's for alignment reasons.
-  vec4 lamp_position;
-  vec4 lamp_color;
-  vec4 ambient_color;
-  float ambient_power;
-  float pad[3];
-} shared_uniforms;
+// Replaced with shared_uniforms.glsl in our code.
+//INCLUDE_SHARED_UNIFORMS
 
 void main() {
   gl_Position = shared_uniforms.projection * shared_uniforms.view *
@@ -31,3 +23,4 @@ void main() {
   // Fragment position, for lighting computations.
   vs_out.frag_position = vec3(model_transform_in * vec4(position_in, 1.0));
 }
+

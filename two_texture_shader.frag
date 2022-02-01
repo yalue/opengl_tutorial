@@ -8,16 +8,8 @@ in VS_OUT {
 
 out vec4 frag_color;
 
-layout(std140) uniform SharedUniforms {
-  mat4 projection;
-  mat4 view;
-  // Use vec4's rather than vec3's for alignment reasons.
-  vec4 lamp_position;
-  vec4 lamp_color;
-  vec4 ambient_color;
-  float ambient_power;
-  float pad[3];
-} shared_uniforms;
+// Replaced with shared_uniforms.glsl in our code.
+//INCLUDE_SHARED_UNIFORMS
 
 uniform sampler2D texture0;
 uniform sampler2D texture1;
@@ -31,8 +23,22 @@ void main() {
   vec3 normal = normalize(fs_in.normal);
   vec3 light_dir = normalize(shared_uniforms.lamp_position.xyz -
     fs_in.frag_position);
+
+  // Diffuse component
   float diffuse_power = max(dot(normal, light_dir), 0.0);
   vec3 diffuse_color = shared_uniforms.lamp_color.xyz * diffuse_power;
-  frag_color = vec4(vec3(tex_color) * (ambient_light + diffuse_color), alpha);
+
+  vec3 specular_color = vec3(0, 0, 0);
+  // Specular component
+  float specular_scale = 0.5;
+  vec3 view_dir = normalize(shared_uniforms.view_position.xyz -
+    fs_in.frag_position);
+  vec3 reflect_dir = reflect(-light_dir, normal);
+  float specular_power = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
+  specular_color = specular_scale * specular_power *
+    shared_uniforms.lamp_color.xyz;
+
+  vec3 final_light = ambient_light + diffuse_color + specular_color;
+  frag_color = vec4(vec3(tex_color) * final_light, alpha);
 }
 

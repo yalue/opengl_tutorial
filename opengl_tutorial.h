@@ -19,6 +19,7 @@ typedef struct {
   vec4 lamp_position;
   vec4 lamp_color;
   vec4 ambient_color;
+  vec4 view_position;
   float ambient_power;
   float pad[3];
 } SharedUniformBlock;

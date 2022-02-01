@@ -101,7 +101,7 @@ static void GetViewAndProjection(ApplicationState *s) {
   glm_mat4_copy(view, s->shared_uniforms.view);
 }
 
-// Updates the view matrix. Requires the uniform buffer to be bound.
+// Updates the view matrix and position in world space.
 static void UpdateView(ApplicationState *s) {
   vec3 position, target, up;
   float tmp;
@@ -116,6 +116,7 @@ static void UpdateView(ApplicationState *s) {
   position[0] = sin(tmp) * 15.0;
   position[2] = cos(tmp) * 15.0;
   glm_lookat(position, target, up, s->shared_uniforms.view);
+  glm_vec4(position, 0, s->shared_uniforms.view_position);
 }
 
 // Updates the lamp's location and associated uniform data. Requires the
@@ -127,7 +128,7 @@ static void UpdateLamp(ApplicationState *s) {
   s->shared_uniforms.lamp_position[1] = 2.0;
   tmp = glfwGetTime() / 2.0;
   s->shared_uniforms.lamp_position[0] = sin(tmp) * 8.0;
-  s->shared_uniforms.lamp_position[2] = cos(tmp) * 8.0;
+  s->shared_uniforms.lamp_position[2] = cos(tmp) * -8.0;
   glm_vec4_copy3(s->shared_uniforms.lamp_position, lamp_pos);
   // Update the lamp mesh's location
   glm_mat4_identity(transform.model);
@@ -198,9 +199,6 @@ static int RunMainLoop(ApplicationState *s) {
     glBindBuffer(GL_UNIFORM_BUFFER, s->uniform_buffer);
     glBufferData(GL_UNIFORM_BUFFER, sizeof(SharedUniformBlock),
       (void *) &(s->shared_uniforms), GL_STATIC_DRAW);
-
-    // TODO (next): Implement specular lighting, following the tutorial at
-    // https://learnopengl.com/Lighting/Basic-Lighting
 
     if (!DrawMesh(s->lamp)) return 0;
     if (!DrawMesh(s->floor)) return 0;

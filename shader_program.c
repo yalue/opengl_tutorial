@@ -56,13 +56,37 @@ static GLuint LoadShader(const char *path, GLenum shader_type) {
   GLuint to_return = 0;
   GLint compile_result = 0;
   GLchar shader_log[512];
-  uint8_t *shader_src = ReadFullFile(path);
-  if (!shader_src) return 0;
+  char *shader_src_orig = NULL;
+  char *shared_uniform_code = NULL;
+  char *final_src = NULL;
+
+  // First do some preprocessing to insert the common uniform definitions in
+  // place of the special comment in the main shader source.
+  shader_src_orig = ReadFullFile(path);
+  if (!shader_src_orig) return 0;
+  shared_uniform_code = ReadFullFile("./shared_uniforms.glsl");
+  if (!shared_uniform_code) {
+    free(shader_src_orig);
+    return 0;
+  }
+  final_src = StringReplace(shader_src_orig, "//INCLUDE_SHARED_UNIFORMS\n",
+    shared_uniform_code);
+  if (!final_src) {
+    printf("Failed preprocessing shader source code.\n");
+    free(shader_src_orig);
+    free(shared_uniform_code);
+    return 0;
+  }
+  free(shader_src_orig);
+  free(shared_uniform_code);
+  shader_src_orig = NULL;
+  shared_uniform_code = NULL;
+
   to_return = glCreateShader(shader_type);
-  glShaderSource(to_return, 1, (const char **) &shader_src, NULL);
+  glShaderSource(to_return, 1, (const char**) &final_src, NULL);
   glCompileShader(to_return);
-  free(shader_src);
-  shader_src = NULL;
+  free(final_src);
+  final_src = NULL;
 
   // Check compilation success.
   memset(shader_log, 0, sizeof(shader_log));
