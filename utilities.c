@@ -119,7 +119,10 @@ char* StringReplace(const char *input, const char *match, const char *r) {
   // Allocate the new string's memory, including space for the null char
   new_length = original_length - (occurrences * match_length) +
     (occurrences * sub_length);
+  if (new_length < 0) return NULL;
   to_return = (char *) calloc(new_length + 1, sizeof(char));
+  if (!to_return) return NULL;
+  if (new_length == 0) return to_return;
 
   // Build the string with replacements.
   output_pos = to_return;

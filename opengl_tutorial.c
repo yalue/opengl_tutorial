@@ -172,6 +172,10 @@ static int RunMainLoop(ApplicationState *s) {
   s->shared_uniforms.ambient_color[1] = 1.0;
   s->shared_uniforms.ambient_color[2] = 1.0;
   s->shared_uniforms.ambient_power = 0.4;
+  // Taken from the tutorial on "Light casters"
+  s->shared_uniforms.lamp_constant = 1.0;
+  s->shared_uniforms.lamp_linear = 0.09;
+  s->shared_uniforms.lamp_quadratic = 0.032;
 
   // Uncomment to render in wireframe mode.
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);

@@ -21,7 +21,9 @@ typedef struct {
   vec4 ambient_color;
   vec4 view_position;
   float ambient_power;
-  float pad[3];
+  float lamp_constant;
+  float lamp_linear;
+  float lamp_quadratic;
 } SharedUniformBlock;
 
 // Maintains data indicating how a single mesh should be transformed.

@@ -7,6 +7,8 @@ layout(std140) uniform SharedUniforms {
   vec4 ambient_color;
   vec4 view_position;
   float ambient_power;
-  float pad[3];
+  float lamp_constant;
+  float lamp_linear;
+  float lamp_quadratic;
 } shared_uniforms;
 

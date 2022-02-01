@@ -35,7 +35,16 @@ void main() {
   vec3 specular_color = specular_scale * specular_power *
     shared_uniforms.lamp_color.xyz;
 
-  vec3 final_light = ambient_light + diffuse_color + specular_color;
+  // Lamp power
+  float lamp_dist = length(shared_uniforms.lamp_position.xyz -
+    fs_in.frag_position);
+  float attenuation = 1.0 / (shared_uniforms.lamp_constant +
+    shared_uniforms.lamp_linear * lamp_dist +
+    shared_uniforms.lamp_quadratic * lamp_dist * lamp_dist);
+
+  // NOTE: could also attenuate ambient here.
+  vec3 final_light = ambient_light + attenuation * (diffuse_color +
+    specular_color);
   frag_color = vec4(vec3(tex_color) * final_light, alpha);
 }
 
