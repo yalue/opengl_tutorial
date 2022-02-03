@@ -142,8 +142,7 @@ ShaderProgram* SetupShaderProgram(const char *vertex_src,
   memset(link_log, 0, sizeof(link_log));
   glGetProgramiv(shader_program, GL_LINK_STATUS, &link_result);
   if (link_result != GL_TRUE) {
-    glGetProgramInfoLog(shader_program, sizeof(link_log) - 1, NULL,
-      link_log);
+    glGetProgramInfoLog(shader_program, sizeof(link_log) - 1, NULL, link_log);
     printf("GL program link error:\n%s\n", link_log);
     glDeleteProgram(shader_program);
     return NULL;

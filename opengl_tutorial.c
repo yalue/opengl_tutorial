@@ -189,7 +189,7 @@ static int RunMainLoop(ApplicationState *s) {
       return 0;
     }
 
-    glClearColor(0.3f, 0.05f, 0.5f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Update the model transforms
@@ -201,8 +201,8 @@ static int RunMainLoop(ApplicationState *s) {
     // Update the uniform data, now that we've adjusted the camera and lamp.
     // NOTE: Maybe eventually update this to only copy the parts that change.
     glBindBuffer(GL_UNIFORM_BUFFER, s->uniform_buffer);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(SharedUniformBlock),
-      (void *) &(s->shared_uniforms), GL_STATIC_DRAW);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SharedUniformBlock),
+      (void *) &(s->shared_uniforms));
 
     if (!DrawMesh(s->lamp)) return 0;
     if (!DrawMesh(s->floor)) return 0;

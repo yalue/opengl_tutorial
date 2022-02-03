@@ -197,15 +197,21 @@ void DestroyMesh(Mesh *mesh) {
   glDeleteBuffers(1, &(mesh->vertex_buffer));
   glDeleteBuffers(1, &(mesh->instanced_vertex_buffer));
   glDeleteVertexArrays(1, &(mesh->vertex_array));
+  DestroyShaderProgram(mesh->shader_program);
   memset(mesh, 0, sizeof(*mesh));
   free(mesh);
 }
 
 int SetInstanceTransforms(Mesh *m, int instance_count, ModelAndNormal *data) {
-  m->instance_count = instance_count;
   glBindBuffer(GL_ARRAY_BUFFER, m->instanced_vertex_buffer);
-  glBufferData(GL_ARRAY_BUFFER, instance_count * sizeof(ModelAndNormal), data,
-    GL_STATIC_DRAW);
+  if (m->instance_count == instance_count) {
+    glBufferSubData(GL_ARRAY_BUFFER, 0, instance_count *
+      sizeof(ModelAndNormal), data);
+  } else {
+    m->instance_count = instance_count;
+    glBufferData(GL_ARRAY_BUFFER, instance_count * sizeof(ModelAndNormal),
+      data, GL_STATIC_DRAW);
+  }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   return CheckGLErrors();
 }
