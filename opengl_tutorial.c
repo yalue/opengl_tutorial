@@ -47,6 +47,12 @@ void FreeApplicationState(ApplicationState *s) {
   free(s);
 }
 
+static void UpdateProjectionMatrix(ApplicationState *s) {
+  glm_mat4_identity(s->shared_uniforms.projection);
+  glm_perspective(45.0, s->aspect_ratio, 0.01, 100.0,
+    s->shared_uniforms.projection);
+}
+
 static void FramebufferResizedCallback(GLFWwindow *window, int width,
     int height) {
   ApplicationState *s = (ApplicationState *) glfwGetWindowUserPointer(window);
@@ -54,6 +60,7 @@ static void FramebufferResizedCallback(GLFWwindow *window, int width,
   s->window_height = height;
   s->aspect_ratio = ((float) s->window_width) / ((float) s->window_height);
   glViewport(0, 0, width, height);
+  UpdateProjectionMatrix(s);
 }
 
 // Creates the GLFWwindow. Returns 0 on error.
@@ -82,23 +89,6 @@ static void ModelToNormalMatrix(mat4 model, mat3 normal) {
   glm_mat4_inv(model, dst);
   glm_mat4_transpose(dst);
   glm_mat4_pick3(dst, normal);
-}
-
-// Sets the view and projection matrices for the scene, filling in the matrix
-// uniform block.
-static void GetViewAndProjection(ApplicationState *s) {
-  mat4 view, projection;
-  vec3 view_translate;
-  glm_mat4_identity(view);
-  glm_mat4_identity(projection);
-  glm_vec3_zero(view_translate);
-  // Move our viewpoint 3 units "back" from the origin (along the z axis)
-  view_translate[2] = -3.0;
-  glm_translate(view, view_translate);
-  // Create a perspective, with 45 degree FOV
-  glm_perspective(45.0, s->aspect_ratio, 0.01, 100.0, projection);
-  glm_mat4_copy(projection, s->shared_uniforms.projection);
-  glm_mat4_copy(view, s->shared_uniforms.view);
 }
 
 // Updates the view matrix and position in world space.
@@ -167,7 +157,6 @@ static int ProcessInputs(GLFWwindow *window) {
 
 // Runs the main window loop. Returns 0 on error.
 static int RunMainLoop(ApplicationState *s) {
-  GetViewAndProjection(s);
   s->shared_uniforms.ambient_color[0] = 1.0;
   s->shared_uniforms.ambient_color[1] = 1.0;
   s->shared_uniforms.ambient_color[2] = 1.0;
@@ -373,6 +362,7 @@ int main(int argc, char **argv) {
     to_return = 1;
     goto cleanup;
   }
+  UpdateProjectionMatrix(s);
   if (!SetupUniformBuffer(s)) {
     printf("Errors setting up uniform buffer.\n");
     to_return = 1;
